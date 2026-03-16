@@ -85,6 +85,19 @@ android {
         versionCode 1
         versionName "1.0"
     }
+
+    packagingOptions {
+        pickFirst '**/libhermes_executor.so'
+        pickFirst '**/libhermes.so'
+        pickFirst '**/libhermes_inspector.so'
+        pickFirst '**/libc++_shared.so'
+        pickFirst '**/libjsc.so'
+        exclude '**/librnllama*opencl.so'
+        exclude 'lib/arm64-v8a/librnllama_v8_2_dotprod_i8mm_opencl.so'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/NOTICE'
+    }
+
     signingConfigs {
         debug {
             storeFile file('debug.keystore')
@@ -117,3 +130,5 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")

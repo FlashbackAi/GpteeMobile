@@ -1,118 +1,142 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
+import React, { useEffect, useState } from 'react';
+import { Platform } from 'react-native';
+import { relayClient } from './src/network/RelayClient';
+import { useAppStore, UserProfile } from './src/store/appStore';
+import { llamaEngine } from './src/inference/LlamaEngine';
+import HomeScreen from './src/screens/HomeScreen';
+import ChatScreen from './src/screens/ChatScreen';
+import ChatHistoryScreen from './src/screens/ChatHistoryScreen';
+import { ProfileScreen } from './src/screens/ProfileScreen';
+import OnboardingScreen from './src/screens/OnboardingScreen';
+import { ChatMessage } from './src/network/PeerProtocol';
+import { ModelDownloadManager, AVAILABLE_MODELS } from './src/services/ModelDownloadManager';
 
-import React from 'react';
-import type {PropsWithChildren} from 'react';
-import {
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useColorScheme,
-  View,
-} from 'react-native';
+export default function App() {
+  const [showProfile, setShowProfile] = useState(false);
+  const [showChatHistory, setShowChatHistory] = useState(false);
+  const [started, setStarted] = useState(false);
+  const {
+    setConnected,
+    setProviders,
+    setPeerId,
+    reset,
+    messages,
+    setMessages,
+    onboardingCompleted,
+    setUserProfile,
+    loadUserProfile,
+    userProfile,
+    setModelDownloaded,
+    setModelPath,
+    setModelFilename,
+    loadProviderModeEnabled,
+  } = useAppStore();
 
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
+  // ── Load user profile and check model state on mount ──────────────────────
+  useEffect(() => {
+    loadUserProfile();
+    loadProviderModeEnabled();
+    checkModelDownloadState();
+  }, []);
 
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
-
-function Section({children, title}: SectionProps): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
-    </View>
-  );
-}
-
-function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
+  // ── Check if model is downloaded ───────────────────────────────────────────
+  const checkModelDownloadState = async () => {
+    const modelManager = ModelDownloadManager.getInstance();
+    const defaultModel = AVAILABLE_MODELS[0];
+    const isDownloaded = await modelManager.isModelDownloaded(defaultModel);
+    setModelDownloaded(isDownloaded);
+    if (isDownloaded) {
+      const filename = modelManager.getModelFilename(defaultModel);
+      setModelFilename(filename);
+      setModelPath(modelManager.getModelPath(defaultModel));
+    }
   };
 
-  return (
-    <SafeAreaView style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
+  // ── Connect to relay on mount ──────────────────────────────────────────────
+  useEffect(() => {
+    setPeerId(relayClient.getPeerId());
+
+    relayClient.onConnectionChange = (connected) => {
+      setConnected(connected);
+    };
+
+    relayClient.onProvidersUpdated = (providers) => {
+      setProviders(providers);
+    };
+
+    // Clean up on unmount
+    return () => {
+      relayClient.disconnect();
+    };
+  }, []);
+
+  // ── Start session ──────────────────────────────────────────────────────────
+  const handleStart = () => {
+    setStarted(true);
+
+    const deviceInfo = {
+      platform: Platform.OS,
+      modelLoaded: false, // updated when model loads
+      modelName: 'Qwen3.5-0.8B-Q8',
+      acceptingJobs: false, // not accepting jobs by default
+      displayName: userProfile?.displayName || 'Unknown Device',
+    };
+
+    // Connect as user by default, provider mode can be toggled in UI
+    relayClient.connect('user', deviceInfo);
+  };
+
+  // ── Go back to home ────────────────────────────────────────────────────────
+  const handleBack = async () => {
+    relayClient.disconnect();
+    await llamaEngine.unload();
+    reset();
+    setStarted(false);
+  };
+
+  // ── Load saved chat ────────────────────────────────────────────────────────
+  const handleSelectChat = (session: { messages: ChatMessage[] }) => {
+    setMessages(session.messages);
+  };
+
+  // ── Handle onboarding completion ───────────────────────────────────────────
+  const handleOnboardingComplete = (profile: UserProfile) => {
+    setUserProfile(profile);
+  };
+
+  // ── Routing ───────────────────────────────────────────────────────────────
+  // Show onboarding if not completed
+  if (!onboardingCompleted) {
+    return <OnboardingScreen onComplete={handleOnboardingComplete} />;
+  }
+
+  if (showProfile) {
+    return <ProfileScreen onBack={() => {
+      setShowProfile(false);
+      // Trigger model load check when returning from profile
+      if (!started) setStarted(false);
+    }} />;
+  }
+
+  if (showChatHistory) {
+    return (
+      <ChatHistoryScreen
+        onBack={() => setShowChatHistory(false)}
+        onSelectChat={handleSelectChat}
+        currentMessages={messages}
       />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={backgroundStyle}>
-        <Header />
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+    );
+  }
+
+  if (!started) {
+    return <HomeScreen onSelectRole={handleStart} onOpenProfile={() => setShowProfile(true)} />;
+  }
+
+  return (
+    <ChatScreen
+      onBack={handleBack}
+      onOpenMenu={() => setShowChatHistory(true)}
+      onOpenProfile={() => setShowProfile(true)}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
-  },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-  },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
-  },
-  highlight: {
-    fontWeight: '700',
-  },
-});
-
-export default App;
