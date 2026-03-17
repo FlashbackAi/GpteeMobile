@@ -2,10 +2,12 @@ import { NativeModules, Platform } from 'react-native';
 import DeviceInfo from 'react-native-device-info';
 
 export interface MemoryInfo {
-  totalRAM: number; // bytes
-  availableRAM: number; // bytes
-  usedRAM: number; // bytes
-  usagePercent: number; // 0-100
+  totalRAM: number; // bytes - device total RAM
+  availableRAM: number; // bytes - device available RAM
+  usedRAM: number; // bytes - device used RAM
+  usagePercent: number; // 0-100 - device RAM usage
+  appMemory: number; // bytes - this app's memory usage
+  modelMemory: number; // bytes - model memory usage (estimated)
 }
 
 export interface PerformanceMetrics {
@@ -27,43 +29,35 @@ export class HardwareMonitor {
 
   /**
    * Get current memory usage information
-   * Uses NativeModules to query ActivityManager on Android
+   * Uses DeviceInfo to get real device and app memory stats
    */
   static async getMemoryInfo(): Promise<MemoryInfo> {
-    if (Platform.OS !== 'android') {
-      return {
-        totalRAM: 0,
-        availableRAM: 0,
-        usedRAM: 0,
-        usagePercent: 0,
-      };
-    }
-
     try {
-      // On Android, we'll create a native module to get ActivityManager.MemoryInfo
-      // For now, return estimated values based on JS heap
+      // Get actual device RAM info
+      const totalRAM = await DeviceInfo.getTotalMemory();
+      const usedMemory = await DeviceInfo.getUsedMemory();
+      const availableRAM = totalRAM - usedMemory;
+      const usagePercent = (usedMemory / totalRAM) * 100;
+
+      // Get JS heap for app memory estimation
       const jsHeap = (performance as any).memory;
+      let appMemory = 0;
 
-      if (jsHeap) {
-        const totalRAM = jsHeap.jsHeapSizeLimit || 2147483648; // Default 2GB
-        const usedRAM = jsHeap.usedJSHeapSize || 0;
-        const availableRAM = totalRAM - usedRAM;
-        const usagePercent = (usedRAM / totalRAM) * 100;
-
-        return {
-          totalRAM,
-          availableRAM,
-          usedRAM,
-          usagePercent,
-        };
+      if (jsHeap && jsHeap.usedJSHeapSize) {
+        // JS heap size is a good approximation of app memory usage
+        appMemory = jsHeap.usedJSHeapSize;
       }
 
-      // Fallback estimates
+      // Model memory will be updated separately when model is loaded
+      const modelMemory = 0;
+
       return {
-        totalRAM: 4294967296, // 4GB estimate
-        availableRAM: 2147483648, // 2GB estimate
-        usedRAM: 2147483648,
-        usagePercent: 50,
+        totalRAM,
+        availableRAM,
+        usedRAM: usedMemory,
+        usagePercent,
+        appMemory,
+        modelMemory,
       };
     } catch (error) {
       console.error('Error getting memory info:', error);
@@ -72,6 +66,8 @@ export class HardwareMonitor {
         availableRAM: 0,
         usedRAM: 0,
         usagePercent: 0,
+        appMemory: 0,
+        modelMemory: 0,
       };
     }
   }

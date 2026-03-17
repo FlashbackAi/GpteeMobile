@@ -34,6 +34,7 @@ interface AppState {
   modelLoadProgress: number;
   modelError: string | null;
   jobsServed: number;
+  batteryThreshold: number; // Minimum battery % for provider mode (default 20)
 
   // Model download
   modelDownloaded: boolean;
@@ -49,6 +50,8 @@ interface AppState {
   messages: ChatMessage[];
   isGenerating: boolean;
   currentRequestId: string | null;
+  queuePosition: number | null; // Position in provider's queue (null if not queued)
+  queueLength: number | null; // Total queue length (null if not queued)
 
   // Chat history
   chatHistory: ChatHistory[];
@@ -69,6 +72,8 @@ interface AppState {
   loadUserProfile: () => Promise<void>;
   setProviderModeEnabled: (v: boolean) => Promise<void>;
   loadProviderModeEnabled: () => Promise<void>;
+  setBatteryThreshold: (threshold: number) => Promise<void>;
+  loadBatteryThreshold: () => Promise<void>;
   setModelLoaded: (v: boolean) => void;
   setModelLoading: (v: boolean) => void;
   setModelLoadProgress: (v: number) => void;
@@ -88,6 +93,7 @@ interface AppState {
   finaliseMessage: (requestId: string, tokensGenerated: number, durationMs: number, fulfilledBy?: string) => void;
   setGenerating: (v: boolean) => void;
   setCurrentRequestId: (id: string | null) => void;
+  setQueueStatus: (position: number | null, length: number | null) => void;
   setLocalInferenceMode: (v: boolean) => Promise<void>;
   loadLocalInferenceMode: () => Promise<void>;
   clearMessages: () => void;
@@ -114,6 +120,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   modelLoadProgress: 0,
   modelError: null,
   jobsServed: 0,
+  batteryThreshold: 20, // Default 20%
   modelDownloaded: false,
   modelDownloading: false,
   modelDownloadProgress: 0,
@@ -125,6 +132,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   messages: [],
   isGenerating: false,
   currentRequestId: null,
+  queuePosition: null,
+  queueLength: null,
   chatHistory: [],
   currentChatId: null,
   logs: [],
@@ -183,6 +192,26 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     } catch (e) {
       console.error('[AppStore] Failed to load provider mode state:', e);
+    }
+  },
+
+  setBatteryThreshold: async (threshold) => {
+    try {
+      await AsyncStorage.setItem('batteryThreshold', threshold.toString());
+      set({ batteryThreshold: threshold });
+    } catch (e) {
+      console.error('[AppStore] Failed to save battery threshold:', e);
+    }
+  },
+
+  loadBatteryThreshold: async () => {
+    try {
+      const value = await AsyncStorage.getItem('batteryThreshold');
+      if (value !== null) {
+        set({ batteryThreshold: parseInt(value, 10) });
+      }
+    } catch (e) {
+      console.error('[AppStore] Failed to load battery threshold:', e);
     }
   },
 
@@ -262,6 +291,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setGenerating: (v) => set({ isGenerating: v }),
   setCurrentRequestId: (id) => set({ currentRequestId: id }),
+  setQueueStatus: (position, length) => set({ queuePosition: position, queueLength: length }),
   clearMessages: () => set({ messages: [] }),
 
   // Save current chat to history

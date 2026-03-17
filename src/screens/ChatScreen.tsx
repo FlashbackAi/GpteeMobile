@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { v4 as uuidv4 } from 'uuid';
 import Icon from 'react-native-vector-icons/Feather';
+import Toast from 'react-native-toast-message';
 import { useAppStore } from '../store/appStore';
 import { relayClient } from '../network/RelayClient';
 import { ChatMessage, ProviderInfo, InferenceRequestMessage } from '../network/PeerProtocol';
@@ -14,6 +15,7 @@ import { colors } from '../theme/colors';
 import ProviderService from '../services/ProviderService';
 import { NodeInfoPopup } from '../components/NodeInfoPopup';
 import { Sidebar } from '../components/Sidebar';
+import { CustomToast } from '../components/CustomToast';
 
 interface Props {
   onBack: () => void;
@@ -42,6 +44,7 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
     assignedProviderId, setAssignedProviderId,
     addMessage, appendStreamToken, finaliseMessage,
     setGenerating, setCurrentRequestId,
+    queuePosition, queueLength, setQueueStatus,
     modelLoaded, modelPath, modelDownloaded,
     setModelLoaded, setModelLoading,
     userProfile,
@@ -69,21 +72,20 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
   useEffect(() => {
     // User mode callbacks (receiving responses) - use store directly to avoid stale closures
     relayClient.onStreamToken = (requestId, token) => {
-      const { appendStreamToken } = useAppStore.getState();
+      const { appendStreamToken, setQueueStatus } = useAppStore.getState();
       appendStreamToken(requestId, token);
+      // Clear queue status when streaming starts
+      setQueueStatus(null, null);
     };
 
-    relayClient.onStreamDone = (requestId, tokensGenerated, durationMs) => {
-      const { finaliseMessage, selectedProvider } = useAppStore.getState();
-      // Pass the selected provider's display name
-      const providerName = selectedProvider?.displayName || 'Unknown Provider';
+    relayClient.onStreamDone = (requestId, tokensGenerated, durationMs, providerName) => {
+      const { finaliseMessage } = useAppStore.getState();
       finaliseMessage(requestId, tokensGenerated, durationMs, providerName);
     };
 
-    relayClient.onResponse = (requestId, response, tokensGenerated, durationMs) => {
-      const { messages: msgs, addMessage, finaliseMessage, selectedProvider } = useAppStore.getState();
+    relayClient.onResponse = (requestId, response, tokensGenerated, durationMs, providerName) => {
+      const { messages: msgs, addMessage, finaliseMessage } = useAppStore.getState();
       const exists = msgs.find((m) => m.id === requestId);
-      const providerName = selectedProvider?.displayName || 'Unknown Provider';
 
       if (!exists) {
         addMessage({
@@ -98,6 +100,61 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
         });
       }
       finaliseMessage(requestId, tokensGenerated, durationMs, providerName);
+    };
+
+    // Failover callbacks
+    relayClient.onProviderFailover = (requestId, newProviderName, tokensReceived) => {
+      const { addLog } = useAppStore.getState();
+      addLog(`♻️  Switched to ${newProviderName} (${tokensReceived} tokens preserved)`);
+
+      // Show elegant toast notification
+      Toast.show({
+        type: 'info',
+        text1: 'Provider Switched',
+        text2: `Now using ${newProviderName} (${tokensReceived} tokens preserved)`,
+        position: 'top',
+        visibilityTime: 3000,
+      });
+    };
+
+    relayClient.onInferenceError = (requestId, code, message) => {
+      const { addLog, messages, appendStreamToken, finaliseMessage, setGenerating, setCurrentRequestId, setQueueStatus } = useAppStore.getState();
+      addLog(`❌ Inference failed: ${message}`);
+
+      // Find and finalize the message with error (only if message exists)
+      const msg = messages.find(m => m.id === requestId);
+      if (msg) {
+        appendStreamToken(requestId, `\n\n[Error: ${message}]`);
+        finaliseMessage(requestId, 0, 0, 'Failed');
+      }
+
+      setGenerating(false);
+      setCurrentRequestId(null);
+      setQueueStatus(null, null); // Clear queue status on error
+
+      // Show elegant error toast
+      Toast.show({
+        type: 'error',
+        text1: 'Inference Failed',
+        text2: message,
+        position: 'top',
+        visibilityTime: 4000,
+      });
+    };
+
+    relayClient.onQueueStatus = (requestId, queuePosition, queueLength) => {
+      const { addLog, setQueueStatus } = useAppStore.getState();
+      addLog(`📋 Queue position ${queuePosition} of ${queueLength}`);
+      setQueueStatus(queuePosition, queueLength);
+    };
+
+    relayClient.onReadyToProcess = (requestId) => {
+      const { addLog, setQueueStatus } = useAppStore.getState();
+      addLog(`📤 Provider ready - retrying WebRTC connection`);
+      // Clear queue status (we're being processed now)
+      setQueueStatus(null, null);
+      // Retry the request (will initiate new WebRTC connection)
+      relayClient.retryInferenceRequest(requestId);
     };
 
     // NOTE: Provider mode callbacks (onInferenceRequest, onCancelRequest) are set up globally in App.tsx
@@ -374,7 +431,12 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
       };
       addMessage(userMsg);
 
-      const requestId = relayClient.sendInferenceRequest(selectedProvider.peerId, prompt);
+      // Send request with full conversation history for failover support
+      const requestId = relayClient.sendInferenceRequest(
+        selectedProvider.peerId,
+        prompt,
+        messages // Pass full conversation history
+      );
       addMessage({
         id: requestId,
         role: 'assistant',
@@ -504,7 +566,7 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
             {item.streaming && <ActivityIndicator size="small" color={colors.accent.primary} style={styles.cursor} />}
             {!item.streaming && item.tokensGenerated && item.tokensGenerated > 0 && (
               <Text style={styles.metaText}>
-                {`${item.tokensGenerated} tokens · ${item.durationMs || 0}ms · ${item.durationMs ? (item.tokensGenerated / (item.durationMs / 1000)).toFixed(1) : '0'} t/s${item.fulfilledBy && typeof item.fulfilledBy === 'string' ? ` · ${item.fulfilledBy}` : ''}`}
+                {`${item.tokensGenerated} tokens · ${item.durationMs || 0}ms · ${item.durationMs ? (item.tokensGenerated / (item.durationMs / 1000)).toFixed(1) : '0'} t/s${item.fulfilledBy && typeof item.fulfilledBy === 'string' && item.fulfilledBy.length > 0 ? ` · ${item.fulfilledBy}` : ''}`}
               </Text>
             )}
           </View>
@@ -612,6 +674,31 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
             </Text>
           )}
         </View>
+
+        {/* Queue Status Bar */}
+        {queuePosition !== null && queueLength !== null && !useLocalModel && (
+          <View style={styles.queueBar}>
+            <View style={styles.queueContent}>
+              <Icon name="clock" size={16} color={colors.status.info} />
+              <View style={styles.queueTextContainer}>
+                <Text style={styles.queueTitle}>Due to high demand, you're in the queue</Text>
+                <Text style={styles.queuePosition}>
+                  Position {queuePosition} of {queueLength}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.queueProgressContainer}>
+              <View style={styles.queueProgressBar}>
+                <View
+                  style={[
+                    styles.queueProgressFill,
+                    { width: `${((queueLength - queuePosition + 1) / queueLength) * 100}%` }
+                  ]}
+                />
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* Live Metrics Bar */}
         {liveMetrics && useLocalModel && (
@@ -725,6 +812,24 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
           setShowSidebar(false);
         }}
         currentChatId={currentChatId || undefined}
+      />
+
+      {/* Toast Notifications */}
+      <Toast
+        config={{
+          info: ({ text1, text2 }) => (
+            <CustomToast text1={text1} text2={text2} type="info" />
+          ),
+          error: ({ text1, text2 }) => (
+            <CustomToast text1={text1} text2={text2} type="error" />
+          ),
+          success: ({ text1, text2 }) => (
+            <CustomToast text1={text1} text2={text2} type="success" />
+          ),
+          warning: ({ text1, text2 }) => (
+            <CustomToast text1={text1} text2={text2} type="warning" />
+          ),
+        }}
       />
     </SafeAreaView>
   );
@@ -878,6 +983,45 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.accent.primary,
     fontWeight: '600',
+  },
+  queueBar: {
+    backgroundColor: colors.background.secondary,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  queueContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 8,
+  },
+  queueTextContainer: {
+    flex: 1,
+  },
+  queueTitle: {
+    fontSize: 13,
+    color: colors.text.primary,
+    marginBottom: 2,
+  },
+  queuePosition: {
+    fontSize: 11,
+    color: colors.text.tertiary,
+  },
+  queueProgressContainer: {
+    width: '100%',
+  },
+  queueProgressBar: {
+    height: 4,
+    backgroundColor: colors.background.tertiary,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  queueProgressFill: {
+    height: '100%',
+    backgroundColor: colors.status.info,
+    borderRadius: 2,
   },
   messageList: {
     padding: 16,

@@ -13,6 +13,11 @@ import {
   WebRTCOfferMessage,
   WebRTCAnswerMessage,
   WebRTCIceCandidateMessage,
+  ProviderFailoverMessage,
+  InferenceErrorMessage,
+  QueueStatusMessage,
+  ReadyToProcessMessage,
+  ChatMessage,
 } from './PeerProtocol';
 import { WebRTCClient } from './WebRTCClient';
 
@@ -20,16 +25,21 @@ import { WebRTCClient } from './WebRTCClient';
 // Replace with your relay server URL (use your local IP or deployed server)
 // Example for local testing: ws://192.168.1.100:8080
 // Example for deployed: ws://your-server.com:8080
-export const RELAY_URL = 'ws://192.168.0.66:9293'; // Android emulator localhost
+// **** AWS EIP: 13.126.31.242*****
+export const RELAY_URL = 'ws://13.126.31.242:9293'; // Android emulator localhost
 
 // ── Callback types ────────────────────────────────────────────────────────────
 export type OnProvidersUpdated = (providers: ProviderInfo[]) => void;
 export type OnStreamToken = (requestId: string, token: string) => void;
-export type OnStreamDone = (requestId: string, tokensGenerated: number, durationMs: number) => void;
-export type OnResponse = (requestId: string, response: string, tokensGenerated: number, durationMs: number) => void;
+export type OnStreamDone = (requestId: string, tokensGenerated: number, durationMs: number, providerName: string) => void;
+export type OnResponse = (requestId: string, response: string, tokensGenerated: number, durationMs: number, providerName: string) => void;
 export type OnInferenceRequest = (msg: InferenceRequestMessage) => void;
 export type OnCancelRequest = (requestId: string) => void;
 export type OnConnectionChange = (connected: boolean) => void;
+export type OnProviderFailover = (requestId: string, newProviderName: string, tokensReceived: number) => void;
+export type OnInferenceError = (requestId: string, code: string, message: string) => void;
+export type OnQueueStatus = (requestId: string, queuePosition: number, queueLength: number) => void;
+export type OnReadyToProcess = (requestId: string) => void;
 
 // ── RelayClient ───────────────────────────────────────────────────────────────
 class RelayClient {
@@ -47,6 +57,18 @@ class RelayClient {
   private useWebRTC = true; // Enable WebRTC by default
   private webrtcInitializing = false; // Track if WebRTC is being initialized
   private messageQueue: Array<{ msg: GPTeeMessage; resolve: () => void }> = []; // Queue messages during WebRTC setup
+  private providerBusy = false; // Track if provider is busy processing a request
+
+  // Request tracking for client-side failover
+  private pendingRequests = new Map<string, {
+    requestId: string;
+    providerId: string;
+    prompt: string;
+    conversationHistory: ChatMessage[];
+    startTime: number;
+    timeoutTimer: ReturnType<typeof setTimeout> | null;
+  }>();
+  private providers: ProviderInfo[] = [];
 
   // Callbacks
   onProvidersUpdated: OnProvidersUpdated | null = null;
@@ -56,6 +78,10 @@ class RelayClient {
   onInferenceRequest: OnInferenceRequest | null = null;
   onCancelRequest: OnCancelRequest | null = null;
   onConnectionChange: OnConnectionChange | null = null;
+  onProviderFailover: OnProviderFailover | null = null;
+  onInferenceError: OnInferenceError | null = null;
+  onQueueStatus: OnQueueStatus | null = null;
+  onReadyToProcess: OnReadyToProcess | null = null;
 
   constructor() {
     this.peerId = this.getOrCreatePeerId();
@@ -73,6 +99,55 @@ class RelayClient {
 
   isConnected(): boolean {
     return this.connected;
+  }
+
+  // Check if WebRTC is connected
+  isWebRTCConnected(): boolean {
+    return this.webrtcClient?.isConnected() || false;
+  }
+
+  // Get the active provider ID (peer currently connected via WebRTC)
+  getActiveProviderId(): string | null {
+    return this.activeProviderId;
+  }
+
+  // Get the provider currently handling a request (for accurate provider name in UI)
+  getProviderForRequest(requestId: string): ProviderInfo | null {
+    const pending = this.pendingRequests.get(requestId);
+    if (!pending) return null;
+
+    return this.providers.find(p => p.peerId === pending.providerId) || null;
+  }
+
+  // ── Provider busy state management ────────────────────────────────────────────
+  setProviderBusy(busy: boolean) {
+    this.providerBusy = busy;
+    console.log(`[RelayClient] Provider busy state: ${busy}`);
+  }
+
+  isProviderBusy(): boolean {
+    return this.providerBusy;
+  }
+
+  // Close WebRTC if connected to wrong peer (prevents cross-contamination)
+  ensureCorrectPeer(expectedPeerId: string) {
+    if (this.webrtcClient && this.activeProviderId !== expectedPeerId) {
+      console.log(`[RelayClient] ⚠️ Closing WebRTC with wrong peer (expected ${expectedPeerId}, got ${this.activeProviderId})`);
+      this.webrtcClient.close();
+      this.webrtcClient = null;
+      this.activeProviderId = null;
+    }
+  }
+
+  // Close current WebRTC connection (for cleanup after request completes)
+  closeWebRTC() {
+    if (this.webrtcClient) {
+      console.log(`[RelayClient] 🔌 Closing WebRTC connection with ${this.activeProviderId?.slice(0, 8)}`);
+      this.webrtcClient.close();
+      this.webrtcClient = null;
+      this.activeProviderId = null;
+      this.webrtcInitializing = false;
+    }
   }
 
   // ── Connect ─────────────────────────────────────────────────────────────────
@@ -179,7 +254,11 @@ class RelayClient {
     switch (msg.type) {
       case 'provider_list': {
         const pl = msg as ProviderListMessage;
-        // console.log(`[RelayClient] Providers: ${pl.providers.length}`);
+        console.log(`[RelayClient] 📋 Provider list updated: ${pl.providers.length} providers`);
+        pl.providers.forEach((p, i) => {
+          console.log(`[RelayClient]   ${i + 1}. ${p.displayName} (${p.peerId.substring(0, 8)}...)`);
+        });
+        this.providers = pl.providers; // Store for failover
         this.onProvidersUpdated?.(pl.providers);
         break;
       }
@@ -193,7 +272,13 @@ class RelayClient {
 
       case 'inference_response': {
         const res = msg as InferenceResponseMessage;
-        this.onResponse?.(res.requestId, res.response, res.tokensGenerated, res.durationMs);
+
+        // Get provider info for this request
+        const pending = this.pendingRequests.get(res.requestId);
+        const providerInfo = pending ? this.providers.find(p => p.peerId === pending.providerId) : null;
+        const providerName = providerInfo?.displayName || 'Unknown Provider';
+
+        this.onResponse?.(res.requestId, res.response, res.tokensGenerated, res.durationMs, providerName);
         break;
       }
 
@@ -205,7 +290,20 @@ class RelayClient {
 
       case 'inference_done': {
         const done = msg as InferenceDoneMessage;
-        this.onStreamDone?.(done.requestId, done.tokensGenerated, done.durationMs);
+
+        // Get provider info BEFORE deleting from pending requests
+        const pending = this.pendingRequests.get(done.requestId);
+        const providerInfo = pending ? this.providers.find(p => p.peerId === pending.providerId) : null;
+
+        // Clear timeout and remove from pending requests
+        if (pending?.timeoutTimer) {
+          clearTimeout(pending.timeoutTimer);
+        }
+        this.pendingRequests.delete(done.requestId);
+
+        // Pass provider name directly to callback
+        const providerName = providerInfo?.displayName || 'Unknown Provider';
+        this.onStreamDone?.(done.requestId, done.tokensGenerated, done.durationMs, providerName);
         break;
       }
 
@@ -218,6 +316,46 @@ class RelayClient {
 
       case 'error': {
         console.error(`[RelayClient] Server error: ${msg.code} — ${msg.message}`);
+        break;
+      }
+
+      case 'provider_failover': {
+        const failover = msg as ProviderFailoverMessage;
+        console.log(`[RelayClient] ♻️  Provider failed over for request ${failover.requestId}`);
+        console.log(`[RelayClient] New provider: ${failover.newProviderName} (${failover.tokensReceived} tokens preserved)`);
+
+        // Update active provider ID
+        this.activeProviderId = failover.newProviderId;
+
+        // Notify UI about seamless failover
+        this.onProviderFailover?.(failover.requestId, failover.newProviderName, failover.tokensReceived);
+        break;
+      }
+
+      case 'inference_error': {
+        const error = msg as InferenceErrorMessage;
+        console.log(`[RelayClient] ❌ Inference error: ${error.code} - ${error.message}`);
+
+        // For errors, notify UI
+        this.onInferenceError?.(error.requestId, error.code, error.message);
+        break;
+      }
+
+      case 'queue_status': {
+        const queue = msg as QueueStatusMessage;
+        console.log(`[RelayClient] 📋 Queue position ${queue.queuePosition} of ${queue.queueLength} for request ${queue.requestId}`);
+
+        // Notify UI about queue status
+        this.onQueueStatus?.(queue.requestId, queue.queuePosition, queue.queueLength);
+        break;
+      }
+
+      case 'ready_to_process': {
+        const ready = msg as ReadyToProcessMessage;
+        console.log(`[RelayClient] 📤 Provider ready to process request ${ready.requestId} - retrying WebRTC`);
+
+        // Retry WebRTC connection for this request
+        this.onReadyToProcess?.(ready.requestId);
         break;
       }
 
@@ -241,6 +379,14 @@ class RelayClient {
     if (!this.webrtcClient) {
       // Initialize WebRTC client if we receive an offer (we're the answerer)
       if (msg.type === 'webrtc_offer') {
+        // Reject offer if provider is busy (already processing a request)
+        // This prevents establishing WebRTC with a second consumer while serving the first
+        if (this.providerBusy) {
+          console.log('[RelayClient] ⛔ Rejecting WebRTC offer - provider is busy');
+          // Don't initialize WebRTC, the inference request will be queued separately
+          return;
+        }
+
         // console.log('[RelayClient] Initializing WebRTC as answerer');
         this.webrtcInitializing = true;
         this.initializeWebRTC(msg.from);
@@ -271,10 +417,33 @@ class RelayClient {
     };
 
     this.webrtcClient.onConnectionStateChange = (state) => {
-      // console.log(`[RelayClient] WebRTC connection state: ${state}`);
+      console.log(`[RelayClient] WebRTC connection state: ${state}`);
 
       if (state === 'failed' || state === 'disconnected') {
-        // WebRTC failed, flush queue via relay
+        // Get all pending requests for this provider
+        const failedProviderId = this.activeProviderId;
+        const pendingRequestIds: string[] = [];
+
+        this.pendingRequests.forEach((pending, requestId) => {
+          if (pending.providerId === failedProviderId) {
+            pendingRequestIds.push(requestId);
+          }
+        });
+
+        // Only trigger failover if there are actually pending requests
+        if (pendingRequestIds.length > 0) {
+          console.log(`[RelayClient] 💔 WebRTC connection lost - triggering immediate failover for ${pendingRequestIds.length} pending request(s)`);
+
+          // Trigger failover for each pending request
+          pendingRequestIds.forEach(requestId => {
+            console.log(`[RelayClient] ⚡ Immediate failover triggered for request ${requestId}`);
+            this.retryWithNextProvider(requestId);
+          });
+        } else {
+          console.log('[RelayClient] WebRTC disconnected but no pending requests to fail over');
+        }
+
+        // Flush any queued messages via relay
         this.flushMessageQueueViaRelay();
       }
       // Don't flush on 'connected' - wait for encryption ready to ensure data channel is open
@@ -322,9 +491,31 @@ class RelayClient {
   sendInferenceRequest(
     providerId: string,
     prompt: string,
+    conversationHistory?: ChatMessage[],
     params?: InferenceRequestMessage['params'],
   ): string {
     const requestId = uuidv4();
+
+    console.log(`[RelayClient] 📤 Sending request to provider: ${providerId}`);
+    console.log(`[RelayClient] 📊 Available providers for failover: ${this.providers.length}`);
+    this.providers.forEach((p, i) => {
+      console.log(`[RelayClient]   ${i + 1}. ${p.displayName} (${p.peerId.substring(0, 8)}...) ${p.peerId === providerId ? '← SELECTED' : ''}`);
+    });
+
+    // Track this request for client-side failover
+    const timeoutTimer = setTimeout(() => {
+      this.handleRequestTimeout(requestId);
+    }, 30000); // 30 second timeout
+
+    this.pendingRequests.set(requestId, {
+      requestId,
+      providerId,
+      prompt,
+      conversationHistory: conversationHistory || [],
+      startTime: Date.now(),
+      timeoutTimer,
+    });
+
     const msg: InferenceRequestMessage = {
       type: 'inference_request',
       id: uuidv4(),
@@ -333,6 +524,7 @@ class RelayClient {
       timestamp: Date.now(),
       requestId,
       prompt,
+      conversationHistory, // Include full conversation for failover
       params: params ?? { maxTokens: 2048, temperature: 0.7 },
     };
 
@@ -341,7 +533,13 @@ class RelayClient {
       // console.log('[RelayClient] Starting WebRTC connection for provider');
       this.initiateWebRTC(providerId).catch(err => {
         console.error('[RelayClient] ❌ WebRTC initiation failed:', err);
-        throw new Error('Failed to establish P2P connection. WebRTC is required for inference.');
+
+        // Clear timeout and retry with next provider
+        const pending = this.pendingRequests.get(requestId);
+        if (pending?.timeoutTimer) {
+          clearTimeout(pending.timeoutTimer);
+        }
+        this.retryWithNextProvider(requestId);
       });
     }
 
@@ -354,15 +552,157 @@ class RelayClient {
 
     // Send via WebRTC only - no relay fallback
     if (this.webrtcClient?.isConnected()) {
-      console.log('[RelayClient] ✅ Sending request via WebRTC');
+      console.log('[RelayClient] ✅ Sending request via WebRTC to', providerId);
       this.webrtcClient.sendMessage(msg);
     } else {
       const error = '❌ WebRTC not connected. Cannot send inference request via relay (P2P-only mode).';
       console.error('[RelayClient]', error);
-      throw new Error(error);
+
+      // Clear timeout and retry
+      const pending = this.pendingRequests.get(requestId);
+      if (pending?.timeoutTimer) {
+        clearTimeout(pending.timeoutTimer);
+      }
+      this.retryWithNextProvider(requestId);
     }
 
     return requestId;
+  }
+
+  // ── Handle request timeout (30s no response) ──────────────────────────────────
+  private handleRequestTimeout(requestId: string) {
+    const pending = this.pendingRequests.get(requestId);
+    if (!pending) return;
+
+    console.log(`[RelayClient] ⏰ Request ${requestId} timed out after 30s`);
+
+    // Retry with next provider
+    this.retryWithNextProvider(requestId);
+  }
+
+  // ── Retry with next available provider ────────────────────────────────────────
+  private async retryWithNextProvider(requestId: string) {
+    const pending = this.pendingRequests.get(requestId);
+    if (!pending) return;
+
+    console.log(`[RelayClient] 🔍 Checking providers - Current list has ${this.providers.length} providers`);
+    console.log(`[RelayClient] Failed provider: ${pending.providerId}`);
+
+    // Find next available provider (excluding current failed one)
+    const availableProviders = this.providers.filter(p => p.peerId !== pending.providerId);
+    console.log(`[RelayClient] Available alternatives: ${availableProviders.length}`);
+
+    if (availableProviders.length === 0) {
+      console.log(`[RelayClient] ❌ No alternative providers available (Total: ${this.providers.length}, Failed: ${pending.providerId})`);
+
+      // Check if the provider list might be stale
+      if (this.providers.length > 0) {
+        console.log(`[RelayClient] ⚠️ Provider list might be stale - only has the failed provider`);
+      }
+
+      this.onInferenceError?.(requestId, 'NO_PROVIDERS_AVAILABLE', 'No alternative providers available. Please try again.');
+      this.pendingRequests.delete(requestId);
+      return;
+    }
+
+    const nextProvider = availableProviders[0]; // Least loaded (already sorted by relay)
+    console.log(`[RelayClient] ♻️  Switching from ${pending.providerId} to ${nextProvider.peerId}`);
+
+    // Update pending request with new provider
+    pending.providerId = nextProvider.peerId;
+    pending.startTime = Date.now();
+
+    // Reset timeout
+    if (pending.timeoutTimer) {
+      clearTimeout(pending.timeoutTimer);
+    }
+    pending.timeoutTimer = setTimeout(() => {
+      this.handleRequestTimeout(requestId);
+    }, 30000);
+
+    // Notify UI about provider switch
+    this.onProviderFailover?.(requestId, nextProvider.displayName || 'Unknown', 0);
+
+    // Gracefully close old WebRTC connection before switching
+    if (this.webrtcClient) {
+      console.log('[RelayClient] 🔌 Closing old WebRTC connection before failover');
+      try {
+        await this.webrtcClient.close(); // Properly cleanup encryption keys and channels
+      } catch (e) {
+        console.error('[RelayClient] Error closing WebRTC:', e);
+      }
+    }
+
+    // Clear message queue to prevent decryption attempts with stale keys
+    this.messageQueue = [];
+
+    // Reset WebRTC state
+    this.webrtcClient = null;
+    this.activeProviderId = null;
+    this.webrtcInitializing = false;
+
+    // Send request to new provider
+    this.sendInferenceRequestInternal(nextProvider.peerId, pending.prompt, pending.conversationHistory, requestId);
+  }
+
+  // ── Retry inference request (when provider signals ready) ─────────────────────
+  retryInferenceRequest(requestId: string) {
+    const pending = this.pendingRequests.get(requestId);
+    if (!pending) {
+      console.log(`[RelayClient] ⚠️ No pending request found for ${requestId}`);
+      return;
+    }
+
+    console.log(`[RelayClient] 🔄 Retrying request ${requestId} - provider is ready`);
+    this.sendInferenceRequestInternal(pending.providerId, pending.prompt, pending.conversationHistory, requestId);
+  }
+
+  // ── Internal send (for retries) ───────────────────────────────────────────────
+  private async sendInferenceRequestInternal(
+    providerId: string,
+    prompt: string,
+    conversationHistory: ChatMessage[],
+    requestId: string
+  ) {
+    const msg: InferenceRequestMessage = {
+      type: 'inference_request',
+      id: uuidv4(),
+      from: this.peerId,
+      to: providerId,
+      timestamp: Date.now(),
+      requestId,
+      prompt,
+      conversationHistory,
+      isFailoverRequest: true,
+      params: { maxTokens: 2048, temperature: 0.7 },
+    };
+
+    // Initiate new WebRTC connection
+    if (this.useWebRTC && !this.webrtcClient && !this.webrtcInitializing) {
+      try {
+        await this.initiateWebRTC(providerId);
+
+        // Wait a moment for WebRTC to be ready
+        setTimeout(() => {
+          if (this.webrtcClient?.isConnected()) {
+            console.log('[RelayClient] ✅ Sending retry request via WebRTC');
+            this.webrtcClient.sendMessage(msg);
+          } else {
+            // Queue it
+            this.messageQueue.push({ msg, resolve: () => {} });
+          }
+        }, 500);
+      } catch (err) {
+        console.error('[RelayClient] ❌ Retry WebRTC initiation failed:', err);
+
+        // Try one more provider
+        const pending = this.pendingRequests.get(requestId);
+        if (pending?.timeoutTimer) {
+          clearTimeout(pending.timeoutTimer);
+        }
+        this.retryWithNextProvider(requestId);
+      }
+    }
   }
 
   // ── Send stream token (Provider → User) ─────────────────────────────────────
@@ -383,13 +723,13 @@ class RelayClient {
     const isCorrectPeer = this.activeProviderId === userPeerId;
     console.log(`[RelayClient] sendStreamToken: WebRTC=${isWebRTCConnected}, correctPeer=${isCorrectPeer}, activeProvider=${this.activeProviderId}, userPeer=${userPeerId}`);
 
-    if (isWebRTCConnected) {
-      // If peer ID doesn't match but WebRTC is connected, it might be a bidirectional connection
-      // Just send it - the WebRTC client knows who it's connected to
+    if (isWebRTCConnected && isCorrectPeer) {
+      // Send via WebRTC if connected to correct peer
       console.log('[RelayClient] ✅ Sending stream token via WebRTC');
       this.webrtcClient.sendMessage(msg);
     } else {
-      const error = `❌ Cannot send stream token: WebRTC not connected (P2P-only mode)`;
+      // WebRTC not ready - throw error so consumer can retry
+      const error = `❌ Cannot send stream token: WebRTC not ready (connected=${isWebRTCConnected}, correctPeer=${isCorrectPeer})`;
       console.error('[RelayClient]', error);
       throw new Error(error);
     }
@@ -410,16 +750,77 @@ class RelayClient {
 
     // Send via WebRTC only - no relay fallback
     const isWebRTCConnected = this.webrtcClient?.isConnected();
-    console.log(`[RelayClient] sendStreamDone: WebRTC=${isWebRTCConnected}, activeProvider=${this.activeProviderId}, userPeer=${userPeerId}`);
+    const isCorrectPeer = this.activeProviderId === userPeerId;
+    console.log(`[RelayClient] sendStreamDone: WebRTC=${isWebRTCConnected}, correctPeer=${isCorrectPeer}, activeProvider=${this.activeProviderId}, userPeer=${userPeerId}`);
 
-    if (isWebRTCConnected) {
+    if (isWebRTCConnected && isCorrectPeer) {
+      // Send via WebRTC if connected to correct peer
       console.log('[RelayClient] ✅ Sending done via WebRTC');
       this.webrtcClient.sendMessage(msg);
     } else {
-      const error = `❌ Cannot send stream done: WebRTC not connected (P2P-only mode)`;
+      // WebRTC not ready - throw error so consumer can retry
+      const error = `❌ Cannot send stream done: WebRTC not ready (connected=${isWebRTCConnected}, correctPeer=${isCorrectPeer})`;
       console.error('[RelayClient]', error);
       throw new Error(error);
     }
+  }
+
+  // Send error response to consumer (provider → consumer)
+  sendInferenceError(userPeerId: string, requestId: string, code: string, message: string) {
+    const msg: InferenceErrorMessage = {
+      type: 'inference_error',
+      id: uuidv4(),
+      from: this.peerId,
+      to: userPeerId,
+      timestamp: Date.now(),
+      requestId,
+      code,
+      message,
+    };
+
+    // Send via WebRTC if available, fallback to relay
+    const isWebRTCConnected = this.webrtcClient?.isConnected();
+
+    if (isWebRTCConnected) {
+      console.log('[RelayClient] ✅ Sending error via WebRTC');
+      this.webrtcClient.sendMessage(msg);
+    } else {
+      console.log('[RelayClient] Sending error via relay');
+      this.send(msg);
+    }
+  }
+
+  // Send queue status to consumer (provider → consumer)
+  sendQueueStatus(userPeerId: string, requestId: string, queuePosition: number, queueLength: number) {
+    const msg: QueueStatusMessage = {
+      type: 'queue_status',
+      id: uuidv4(),
+      from: this.peerId,
+      to: userPeerId,
+      timestamp: Date.now(),
+      requestId,
+      queuePosition,
+      queueLength,
+    };
+
+    // Send via relay (queue updates don't need WebRTC speed)
+    this.send(msg);
+  }
+
+  // Send ready-to-process signal to consumer (provider → consumer)
+  // Tells consumer to retry WebRTC connection
+  sendReadyToProcess(userPeerId: string, requestId: string) {
+    const msg: ReadyToProcessMessage = {
+      type: 'ready_to_process',
+      id: uuidv4(),
+      from: this.peerId,
+      to: userPeerId,
+      timestamp: Date.now(),
+      requestId,
+    };
+
+    console.log(`[RelayClient] 📤 Sending ready-to-process signal to ${userPeerId.slice(0, 8)} for request ${requestId}`);
+    this.send(msg);
   }
 
   // ── Send full response (non-streaming fallback) ──────────────────────────────
@@ -535,7 +936,7 @@ class RelayClient {
     }
   }
 
-  disconnect() {
+  async disconnect() {
     this.intentionalDisconnect = true;
     this.stopPing();
     if (this.reconnectTimer) {
@@ -549,7 +950,11 @@ class RelayClient {
 
     // Cleanup WebRTC
     if (this.webrtcClient) {
-      this.webrtcClient.close();
+      try {
+        await this.webrtcClient.close();
+      } catch (e) {
+        console.error('[RelayClient] Error closing WebRTC:', e);
+      }
       this.webrtcClient = null;
       this.activeProviderId = null;
     }

@@ -9,6 +9,7 @@ import {
   Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
+import DeviceInfo from 'react-native-device-info';
 import { useAppStore } from '../store/appStore';
 import { HardwareMonitor, SystemInfo, MemoryInfo } from '../utils/HardwareMonitor';
 import {
@@ -28,26 +29,40 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     setModelDownloadProgress,
     setModelFilename,
     setModelPath,
+    batteryThreshold,
+    setBatteryThreshold,
+    loadBatteryThreshold,
   } = useAppStore();
 
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [memoryInfo, setMemoryInfo] = useState<MemoryInfo | null>(null);
   const [downloadedModels, setDownloadedModels] = useState<string[]>([]);
   const [modelSize, setModelSize] = useState<number>(0);
+  const [batteryLevel, setBatteryLevel] = useState<number>(0);
 
   const modelManager = ModelDownloadManager.getInstance();
 
   useEffect(() => {
     loadSystemInfo();
     loadDownloadedModels();
+    loadBatteryInfo();
+    loadBatteryThreshold(); // Load saved threshold
 
     // Refresh memory info every 3 seconds
-    const interval = setInterval(async () => {
+    const memInterval = setInterval(async () => {
       const mem = await HardwareMonitor.getMemoryInfo();
       setMemoryInfo(mem);
     }, 3000);
 
-    return () => clearInterval(interval);
+    // Refresh battery info every 10 seconds
+    const batteryInterval = setInterval(() => {
+      loadBatteryInfo();
+    }, 10000);
+
+    return () => {
+      clearInterval(memInterval);
+      clearInterval(batteryInterval);
+    };
   }, []);
 
   const loadSystemInfo = async () => {
@@ -76,6 +91,19 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     } else {
       setModelSize(0);
     }
+  };
+
+  const loadBatteryInfo = async () => {
+    try {
+      const level = await DeviceInfo.getBatteryLevel();
+      setBatteryLevel(Math.round(level * 100));
+    } catch (error) {
+      console.error('Error getting battery level:', error);
+    }
+  };
+
+  const handleBatteryThresholdChange = (value: number) => {
+    setBatteryThreshold(value); // This saves to AsyncStorage via store action
   };
 
   const handleDownloadModel = async () => {
@@ -202,9 +230,10 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <Text style={styles.sectionTitle}>Memory Usage</Text>
           {memoryInfo && systemInfo && (
             <>
+              {/* Device RAM */}
               <View style={styles.memoryOverview}>
                 <Text style={styles.memoryMainText}>
-                  {HardwareMonitor.formatBytes(memoryInfo.usedRAM)} / {HardwareMonitor.formatBytes(systemInfo.totalRAM)}
+                  Device: {HardwareMonitor.formatBytes(memoryInfo.usedRAM)} / {HardwareMonitor.formatBytes(systemInfo.totalRAM)}
                 </Text>
                 <Text
                   style={[
@@ -231,13 +260,75 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               </View>
 
               <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Free RAM:</Text>
+                <Text style={styles.infoLabel}>Free Device RAM:</Text>
                 <Text style={styles.infoValue}>
-                  {HardwareMonitor.formatBytes(systemInfo.totalRAM - memoryInfo.usedRAM)}
+                  {HardwareMonitor.formatBytes(memoryInfo.availableRAM)}
                 </Text>
               </View>
+
+              {/* App Memory */}
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>App Memory:</Text>
+                <Text style={styles.infoValue}>
+                  {HardwareMonitor.formatBytes(memoryInfo.appMemory)}
+                </Text>
+              </View>
+
+              {/* Model Memory (if loaded) */}
+              {memoryInfo.modelMemory > 0 && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Model in Memory:</Text>
+                  <Text style={[styles.infoValue, styles.successText]}>
+                    {HardwareMonitor.formatBytes(memoryInfo.modelMemory)}
+                  </Text>
+                </View>
+              )}
             </>
           )}
+        </View>
+
+        {/* Battery & Provider Mode */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Battery & Provider Mode</Text>
+
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Current Battery:</Text>
+            <Text style={[
+              styles.infoValue,
+              batteryLevel < batteryThreshold ? styles.warningText : styles.successText
+            ]}>
+              {batteryLevel}%
+            </Text>
+          </View>
+
+          <View style={styles.batteryConfig}>
+            <Text style={styles.configLabel}>
+              Minimum Battery for Provider Mode: {batteryThreshold}%
+            </Text>
+            <Text style={styles.configHint}>
+              Provider mode will auto-disable below this level
+            </Text>
+
+            {/* Simple threshold buttons */}
+            <View style={styles.thresholdButtons}>
+              {[10, 20, 30, 40, 50].map(value => (
+                <TouchableOpacity
+                  key={value}
+                  style={[
+                    styles.thresholdButton,
+                    batteryThreshold === value && styles.thresholdButtonActive
+                  ]}
+                  onPress={() => handleBatteryThresholdChange(value)}>
+                  <Text style={[
+                    styles.thresholdButtonText,
+                    batteryThreshold === value && styles.thresholdButtonTextActive
+                  ]}>
+                    {value}%
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
         </View>
 
         {/* Model Management */}
@@ -516,5 +607,50 @@ const styles = StyleSheet.create({
   },
   memoryBarFill: {
     height: '100%',
+  },
+  batteryConfig: {
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: colors.background.card,
+    borderRadius: 8,
+  },
+  configLabel: {
+    color: colors.text.primary,
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  configHint: {
+    color: colors.text.tertiary,
+    fontSize: 12,
+    marginBottom: 12,
+  },
+  thresholdButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  thresholdButton: {
+    flex: 1,
+    minWidth: 60,
+    backgroundColor: colors.background.tertiary,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  thresholdButtonActive: {
+    backgroundColor: colors.accent.primary,
+    borderColor: colors.accent.primary,
+  },
+  thresholdButtonText: {
+    color: colors.text.tertiary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  thresholdButtonTextActive: {
+    color: colors.background.primary,
   },
 });

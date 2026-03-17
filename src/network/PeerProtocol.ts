@@ -12,6 +12,10 @@ export type MessageType =
   | 'error'
   | 'ping'
   | 'pong'
+  | 'provider_failover'
+  | 'inference_error'
+  | 'queue_status'
+  | 'ready_to_process'
   | 'webrtc_offer'
   | 'webrtc_answer'
   | 'webrtc_ice_candidate';
@@ -63,6 +67,9 @@ export interface InferenceRequestMessage extends BaseMessage {
   to: string;
   requestId: string;
   prompt: string;
+  conversationHistory?: ChatMessage[]; // Full chat context for failover
+  isFailoverRequest?: boolean; // Mark as failover request
+  previousTokens?: number; // Tokens already generated (for failover)
   params?: {
     maxTokens?: number;
     temperature?: number;
@@ -128,6 +135,34 @@ export interface WebRTCIceCandidateMessage extends BaseMessage {
   sdpMLineIndex: number | null;
 }
 
+export interface ProviderFailoverMessage extends BaseMessage {
+  type: 'provider_failover';
+  requestId: string;
+  newProviderId: string;
+  newProviderName: string;
+  tokensReceived: number;
+}
+
+export interface InferenceErrorMessage extends BaseMessage {
+  type: 'inference_error';
+  requestId: string;
+  code: string;
+  message: string;
+}
+
+export interface QueueStatusMessage extends BaseMessage {
+  type: 'queue_status';
+  requestId: string;
+  queuePosition: number; // Position in queue (1 = next, 2 = after next, etc.)
+  queueLength: number; // Total number of requests in queue
+  estimatedWaitTimeMs?: number; // Optional estimated wait time
+}
+
+export interface ReadyToProcessMessage extends BaseMessage {
+  type: 'ready_to_process';
+  requestId: string;
+}
+
 export type GPTeeMessage =
   | RegisterMessage
   | ProviderListMessage
@@ -138,6 +173,10 @@ export type GPTeeMessage =
   | InferenceDoneMessage
   | InferenceCancelMessage
   | ErrorMessage
+  | ProviderFailoverMessage
+  | InferenceErrorMessage
+  | QueueStatusMessage
+  | ReadyToProcessMessage
   | WebRTCOfferMessage
   | WebRTCAnswerMessage
   | WebRTCIceCandidateMessage;

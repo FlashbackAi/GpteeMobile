@@ -110,6 +110,7 @@ export class WebRTCClient {
   private encryptionKey: string | null = null;
   private isInitiator: boolean = false;
   private iceCandidateQueue: any[] = [];
+  private isClosing: boolean = false; // Track intentional shutdown
 
   // Callbacks
   onDataChannelMessage: OnDataChannelMessage | null = null;
@@ -340,7 +341,10 @@ export class WebRTCClient {
         const encryptedMsg: EncryptedMessage = JSON.parse(event.data);
 
         if (!this.encryptionKey) {
-          console.error('[WebRTC] No encryption key available');
+          // During intentional shutdown, this is expected - don't log as error
+          if (!this.isClosing) {
+            console.error('[WebRTC] No encryption key available');
+          }
           return;
         }
 
@@ -350,7 +354,10 @@ export class WebRTCClient {
         console.log(`[WebRTC] Received decrypted message: ${originalMsg.type}`);
         this.onDataChannelMessage?.(originalMsg);
       } catch (e) {
-        console.error('[WebRTC] Failed to decrypt message:', e);
+        // During intentional shutdown, decryption errors are expected
+        if (!this.isClosing) {
+          console.error('[WebRTC] Failed to decrypt message:', e);
+        }
       }
     };
   }
@@ -397,6 +404,7 @@ export class WebRTCClient {
   // ── Cleanup ───────────────────────────────────────────────────────────────────
   async close(): Promise<void> {
     console.log('[WebRTC] Closing connection');
+    this.isClosing = true; // Suppress expected errors during shutdown
 
     if (this.dataChannel) {
       this.dataChannel.close();
@@ -411,6 +419,7 @@ export class WebRTCClient {
     this.encryptionKey = null;
     this.remotePeerId = null;
     this.iceCandidateQueue = [];
+    this.isClosing = false; // Reset for next connection
   }
 
   // ── Status ────────────────────────────────────────────────────────────────────
