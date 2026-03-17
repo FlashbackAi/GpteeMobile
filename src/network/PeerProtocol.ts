@@ -3,6 +3,7 @@ export type PeerRole = 'user' | 'provider';
 export type MessageType =
   | 'register'
   | 'provider_list'
+  | 'provider_status'
   | 'inference_request'
   | 'inference_response'
   | 'inference_stream'
@@ -45,6 +46,16 @@ export interface ProviderInfo {
 export interface ProviderListMessage extends BaseMessage {
   type: 'provider_list';
   providers: ProviderInfo[];
+}
+
+export interface ProviderStatusMessage extends BaseMessage {
+  type: 'provider_status';
+  metrics: {
+    activeJobs: number;
+    queueDepth: number;
+    avgResponseTime: number; // ms
+    tokensPerSec: number;
+  };
 }
 
 export interface InferenceRequestMessage extends BaseMessage {
@@ -120,6 +131,7 @@ export interface WebRTCIceCandidateMessage extends BaseMessage {
 export type GPTeeMessage =
   | RegisterMessage
   | ProviderListMessage
+  | ProviderStatusMessage
   | InferenceRequestMessage
   | InferenceResponseMessage
   | InferenceStreamMessage
@@ -139,4 +151,5 @@ export interface ChatMessage {
   streaming?: boolean;
   tokensGenerated?: number;
   durationMs?: number;
+  fulfilledBy?: string; // Display name of provider who fulfilled this request
 }

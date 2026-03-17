@@ -24,11 +24,9 @@ interface Props {
 
 export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props) {
   const [input, setInput] = useState('');
-  const [useLocalModel, setUseLocalModel] = useState(true); // Use local model by default
   const [accepting, setAccepting] = useState(false);
   const [providerExpanded, setProviderExpanded] = useState(false);
   const [activeJob, setActiveJob] = useState<any>(null);
-  const [logs, setLogs] = useState<string[]>([]);
   const [showProviderNodes, setShowProviderNodes] = useState(false);
   const [showNodeInfo, setShowNodeInfo] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
@@ -43,6 +41,7 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
   const {
     connected, providers, selectedProvider, messages,
     isGenerating, setSelectedProvider, currentRequestId,
+    assignedProviderId, setAssignedProviderId,
     addMessage, appendStreamToken, finaliseMessage,
     setGenerating, setCurrentRequestId,
     modelLoaded, modelPath, modelDownloaded,
@@ -56,22 +55,38 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
     loadChat,
     loadChatHistory,
     startNewChat,
+    peerId,
+    logs,
+    addLog,
+    loadLogs,
+    localInferenceMode,
+    setLocalInferenceMode,
   } = useAppStore();
+
+  // Use localInferenceMode from store as useLocalModel
+  const useLocalModel = localInferenceMode;
+  const setUseLocalModel = setLocalInferenceMode;
 
   // ── Wire up relay callbacks ────────────────────────────────────────────────
   useEffect(() => {
-    // User mode callbacks (receiving responses)
+    // User mode callbacks (receiving responses) - use store directly to avoid stale closures
     relayClient.onStreamToken = (requestId, token) => {
+      const { appendStreamToken } = useAppStore.getState();
       appendStreamToken(requestId, token);
     };
 
     relayClient.onStreamDone = (requestId, tokensGenerated, durationMs) => {
-      finaliseMessage(requestId, tokensGenerated, durationMs);
+      const { finaliseMessage, selectedProvider } = useAppStore.getState();
+      // Pass the selected provider's display name
+      const providerName = selectedProvider?.displayName || 'Unknown Provider';
+      finaliseMessage(requestId, tokensGenerated, durationMs, providerName);
     };
 
     relayClient.onResponse = (requestId, response, tokensGenerated, durationMs) => {
-      const { messages: msgs } = useAppStore.getState();
+      const { messages: msgs, addMessage, finaliseMessage, selectedProvider } = useAppStore.getState();
       const exists = msgs.find((m) => m.id === requestId);
+      const providerName = selectedProvider?.displayName || 'Unknown Provider';
+
       if (!exists) {
         addMessage({
           id: requestId,
@@ -81,102 +96,47 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
           streaming: false,
           tokensGenerated,
           durationMs,
+          fulfilledBy: providerName,
         });
       }
-      finaliseMessage(requestId, tokensGenerated, durationMs);
+      finaliseMessage(requestId, tokensGenerated, durationMs, providerName);
     };
 
-    // Provider mode callbacks (receiving requests)
-    relayClient.onInferenceRequest = async (req: InferenceRequestMessage) => {
-      if (!accepting) return;
+    // NOTE: Provider mode callbacks (onInferenceRequest, onCancelRequest) are set up globally in App.tsx
+    // We don't override them here to keep them active even when not on ChatScreen
 
-      const job = {
-        requestId: req.requestId,
-        fromPeerId: req.from,
-        prompt: req.prompt,
-        startedAt: Date.now(),
-        tokensEmitted: 0,
-        tokensPerSecond: 0,
-      };
-      setActiveJob(job);
-      addLog(`📥 Request from ${req.from.slice(0, 8)}: "${req.prompt.slice(0, 40)}..."`);
-
-      let tokensEmitted = 0;
-
-      try {
-        await llamaEngine.complete(
-          req.prompt,
-          (token) => {
-            tokensEmitted++;
-            const elapsedMs = Date.now() - job.startedAt;
-            const tokensPerSec = elapsedMs > 0 ? (tokensEmitted / (elapsedMs / 1000)) : 0;
-
-            job.tokensEmitted = tokensEmitted;
-            job.tokensPerSecond = tokensPerSec;
-
-            if (tokensEmitted % 5 === 0) {
-              setActiveJob({ ...job });
-            }
-
-            relayClient.sendStreamToken(req.from, req.requestId, token);
-          },
-          req.params,
-        );
-
-        const durationMs = Date.now() - job.startedAt;
-        relayClient.sendStreamDone(req.from, req.requestId, tokensEmitted, durationMs);
-        addLog(`✅ Completed ${tokensEmitted} tokens in ${(durationMs / 1000).toFixed(1)}s`);
-        setActiveJob(null);
-      } catch (error: any) {
-        addLog(`❌ Error: ${error.message}`);
-        setActiveJob(null);
-      }
-    };
-
-    // Cancel request callback (provider receives cancel from user)
-    relayClient.onCancelRequest = async (requestId) => {
-      addLog(`🛑 Cancel request for ${requestId}`);
-      await llamaEngine.stop();
-      setActiveJob(null);
-    };
-
+    // Don't clean up callbacks on unmount - they need to stay active
     return () => {
-      relayClient.onStreamToken = null;
-      relayClient.onStreamDone = null;
-      relayClient.onResponse = null;
-      relayClient.onCancelRequest = null;
-      relayClient.onInferenceRequest = null;
+      // Leave callbacks active - don't null them
     };
-  }, [accepting]);
+  }, []);
 
-  // Auto-select first provider when not using local model
+  // Sticky sessions: Use assigned provider for current chat, or auto-select first available
   useEffect(() => {
-    if (!useLocalModel && providers.length > 0 && !selectedProvider) {
-      setSelectedProvider(providers[0]);
+    if (!useLocalModel && providers.length > 0) {
+      // If we have an assigned provider for this chat, find and use it
+      if (assignedProviderId) {
+        const assignedProvider = providers.find(p => p.peerId === assignedProviderId);
+        if (assignedProvider) {
+          setSelectedProvider(assignedProvider);
+          addLog(`📌 Using sticky session provider: ${assignedProvider.displayName}`);
+        } else {
+          // Assigned provider is offline, fall back to first available
+          setSelectedProvider(providers[0]);
+          setAssignedProviderId(providers[0].peerId);
+          addLog(`⚠️ Assigned provider offline, switching to: ${providers[0].displayName}`);
+        }
+      } else if (!selectedProvider) {
+        // No assigned provider yet, select first and assign it
+        setSelectedProvider(providers[0]);
+        setAssignedProviderId(providers[0].peerId);
+        addLog(`📌 Assigned provider for this chat: ${providers[0].displayName}`);
+      }
     }
     if (providers.length === 0) {
       setSelectedProvider(null);
     }
-  }, [providers, useLocalModel]);
-
-  // Auto-load model on mount if not loaded
-  useEffect(() => {
-    if (!llamaEngine.isLoaded() && modelPath && !llamaEngine.isLoading()) {
-      addLog('⏳ Loading model...');
-      setModelLoading(true);
-      llamaEngine.loadModel(modelPath).then(() => {
-        setModelLoaded(true);
-        setModelLoading(false);
-        addLog('✅ Model loaded');
-      }).catch((error: any) => {
-        setModelLoading(false);
-        addLog(`❌ Model load failed: ${error.message}`);
-      });
-    } else if (llamaEngine.isLoaded() && !modelLoaded) {
-      // Sync state if engine is loaded but store isn't updated
-      setModelLoaded(true);
-    }
-  }, [modelPath]);
+  }, [providers, useLocalModel, assignedProviderId]);
 
 
   // Scroll to bottom on new message
@@ -200,12 +160,31 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
     loadChatHistory();
   }, []);
 
+  // Load logs on mount
+  useEffect(() => {
+    loadLogs();
+  }, []);
+
   // Save chat when generation completes
   useEffect(() => {
     if (!isGenerating && messages.length > 0) {
       saveCurrentChat();
     }
   }, [isGenerating, messages.length]);
+
+  // ── Three User States Logic ────────────────────────────────────────────────
+  // State 1: Provider Mode ON → Force Local Mode ON (serves others + uses own compute)
+  // State 2: Both OFF → Consumer mode (requests from providers)
+  // State 3: Local ON, Provider OFF → Local User (uses own compute, doesn't serve)
+  useEffect(() => {
+    if (providerModeEnabled && !useLocalModel) {
+      setUseLocalModel(true);
+      addLog('🔄 Provider Mode ON → Local Model enabled (State 1: Provider)');
+    }
+  }, [providerModeEnabled]);
+
+  // Registration updates are handled globally in App.tsx
+  // No need to send updates here to avoid race conditions
 
   // Clean up provider service on unmount
   useEffect(() => {
@@ -216,21 +195,41 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
     };
   }, [accepting]);
 
-  const addLog = (msg: string) => {
-    setLogs((prev) => [...prev.slice(-19), `[${new Date().toLocaleTimeString()}] ${msg}`]);
+  const toggleLocalMode = (enabled: boolean) => {
+    // Local Mode can only be toggled when Provider Mode is OFF
+    if (providerModeEnabled) return;
+
+    setUseLocalModel(enabled);
+    if (enabled) {
+      // State 3: Local User (uses own compute, doesn't serve)
+      addLog('🔵 Local Mode ON (State 3: Local User - own compute only)');
+    } else {
+      // State 2: Consumer (requests from providers)
+      addLog('🟣 Local Mode OFF (State 2: Consumer - requesting from providers)');
+    }
   };
 
-  const toggleProviderMode = (enabled: boolean) => {
-    setProviderModeEnabled(enabled);
+  const toggleProviderMode = async (enabled: boolean) => {
+    await setProviderModeEnabled(enabled);
+    // Relay registration update is handled by App.tsx useEffect
+
     if (enabled) {
-      addLog('🟢 Provider mode enabled - will accept jobs from other users');
+      // State 1: Provider Mode ON → serves others, uses own compute
+      addLog('🟢 Provider mode enabled (State 1: Provider - serving others)');
       // Automatically start accepting if model is loaded
       if (modelLoaded) {
-        toggleAccepting(true);
+        setAccepting(true);
+        ProviderService.start();
+        addLog('🟢 Now accepting jobs (available as provider)');
       }
     } else {
-      addLog('⚫ Provider mode disabled');
-      toggleAccepting(false);
+      // Transitioning out of Provider Mode
+      // Will become State 2 (Consumer) if Local Mode OFF, or State 3 (Local User) if Local Mode ON
+      const newState = useLocalModel ? 'State 3: Local User' : 'State 2: Consumer';
+      addLog(`⚫ Provider mode disabled → ${newState}`);
+      setAccepting(false);
+      ProviderService.stop();
+      addLog('🔴 Stopped accepting jobs (no longer available)');
     }
   };
 
@@ -238,38 +237,26 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
   useEffect(() => {
     if (providerModeEnabled && modelLoaded && !accepting) {
       setAccepting(true);
+      ProviderService.start();
+      // Relay registration is handled by App.tsx
+      addLog('🟢 Now accepting jobs (available as provider)');
     } else if (!providerModeEnabled && accepting) {
       setAccepting(false);
+      ProviderService.stop();
+      // Relay registration is handled by App.tsx
+      addLog('🔴 Stopped accepting jobs (no longer available)');
     }
   }, [providerModeEnabled, modelLoaded]);
 
-  const toggleAccepting = (val: boolean) => {
+  const toggleAccepting = async (val: boolean) => {
     setAccepting(val);
+    // Update provider mode in store - this triggers App.tsx to update relay registration
+    await setProviderModeEnabled(val);
 
     if (val) {
-      // Update registration with acceptingJobs=true (becomes available provider)
-      const deviceInfo = {
-        platform: Platform.OS,
-        modelLoaded: modelLoaded,
-        modelName: 'Qwen3.5-0.8B-Q8',
-        acceptingJobs: true,
-        displayName: userProfile?.displayName || 'Unknown Device',
-      };
-      relayClient.updateRegistration(deviceInfo);
-
       ProviderService.start();
       addLog('🟢 Now accepting jobs (available as provider)');
     } else {
-      // Update registration with acceptingJobs=false (not available as provider)
-      const deviceInfo = {
-        platform: Platform.OS,
-        modelLoaded: modelLoaded,
-        modelName: 'Qwen3.5-0.8B-Q8',
-        acceptingJobs: false,
-        displayName: userProfile?.displayName || 'Unknown Device',
-      };
-      relayClient.updateRegistration(deviceInfo);
-
       ProviderService.stop();
       addLog('🔴 Stopped accepting jobs (no longer available)');
     }
@@ -296,10 +283,13 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
       setCurrentRequestId(null);
       setLiveMetrics(null);
 
-      // Finalize the current message
+      // Finalize the current message with proper metadata
       const lastMsg = messages[messages.length - 1];
       if (lastMsg && lastMsg.streaming) {
-        finaliseMessage(lastMsg.id, 0, 0);
+        // Count tokens in partial response if any
+        const tokenCount = lastMsg.content ? lastMsg.content.split(/\s+/).length : 0;
+        const providerName = useLocalModel ? 'Local' : (selectedProvider?.displayName || 'Cancelled');
+        finaliseMessage(lastMsg.id, tokenCount, 0, providerName);
       }
     } catch (error: any) {
       addLog(`❌ Error stopping: ${error.message}`);
@@ -359,13 +349,15 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
         });
 
         const durationMs = Date.now() - startTime;
-        finaliseMessage(assistantId, result.tokensGenerated, result.durationMs);
+        const deviceName = userProfile?.displayName || 'Local Device';
+        finaliseMessage(assistantId, result.tokensGenerated, result.durationMs, deviceName);
 
         // Clear metrics after delay
         setTimeout(() => setLiveMetrics(null), 2000);
       } catch (error: any) {
         appendStreamToken(assistantId, `\n\nError: ${error.message}`);
-        finaliseMessage(assistantId, 0, 0);
+        const deviceName = userProfile?.displayName || 'Local Device';
+        finaliseMessage(assistantId, 0, 0, deviceName);
         setLiveMetrics(null);
       }
     } else {
@@ -434,13 +426,6 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
             </Text>
           </View>
         )}
-
-        <View style={styles.logsContainer}>
-          <Text style={styles.logsTitle}>Activity Log</Text>
-          {logs.slice(-3).map((log, i) => (
-            <Text key={i} style={styles.logText}>{log}</Text>
-          ))}
-        </View>
       </View>
     </Animated.View>
   );
@@ -510,7 +495,7 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
         )}
 
         {/* Regular message bubble */}
-        {displayContent ? (
+        {displayContent && displayContent.length > 0 ? (
           <View
             style={[
               styles.messageBubble,
@@ -521,7 +506,7 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
             {item.streaming && <ActivityIndicator size="small" color={colors.accent.primary} style={styles.cursor} />}
             {!item.streaming && item.tokensGenerated && item.tokensGenerated > 0 && (
               <Text style={styles.metaText}>
-                {`${item.tokensGenerated} tokens · ${item.durationMs || 0}ms · ${item.durationMs ? (item.tokensGenerated / (item.durationMs / 1000)).toFixed(1) : '0'} t/s`}
+                {`${item.tokensGenerated} tokens · ${item.durationMs || 0}ms · ${item.durationMs ? (item.tokensGenerated / (item.durationMs / 1000)).toFixed(1) : '0'} t/s${item.fulfilledBy && typeof item.fulfilledBy === 'string' ? ` · ${item.fulfilledBy}` : ''}`}
               </Text>
             )}
           </View>
@@ -548,9 +533,10 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
                 <Text style={styles.toggleLabel}>Local</Text>
                 <Switch
                   value={useLocalModel}
-                  onValueChange={setUseLocalModel}
+                  onValueChange={toggleLocalMode}
                   trackColor={{ false: colors.input.border, true: colors.accent.primary }}
                   thumbColor={useLocalModel ? colors.button.primaryText : colors.text.tertiary}
+                  disabled={providerModeEnabled}
                 />
               </View>
               <View style={styles.toggleWithExpand}>
@@ -564,7 +550,7 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
                     disabled={!modelDownloaded}
                   />
                 </View>
-                {providerModeEnabled && (
+                {/* {providerModeEnabled && (
                   <TouchableOpacity
                     onPress={() => setProviderExpanded(!providerExpanded)}
                     style={styles.expandButton}
@@ -575,7 +561,7 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
                       color={colors.text.primary}
                     />
                   </TouchableOpacity>
-                )}
+                )} */}
               </View>
             </View>
           </View>
@@ -608,7 +594,10 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
           </Text>
           <Text style={styles.statusText}>•</Text>
           {!useLocalModel && providers.length > 0 ? (
-            <TouchableOpacity onPress={() => setShowProviderNodes(true)} style={styles.providersButton}>
+            <TouchableOpacity onPress={() => {
+              console.log('[ChatScreen] Opening provider nodes popup');
+              setShowProviderNodes(true);
+            }} style={styles.providersButton}>
               <Text style={styles.statusTextLink}>
                 {`${providers.length} provider${providers.length !== 1 ? 's' : ''}`}
               </Text>
@@ -725,6 +714,8 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
       <ProviderNodesPopup
         visible={showProviderNodes}
         providers={providers}
+        currentPeerId={peerId}
+        isAcceptingJobs={providerModeEnabled && modelLoaded}
         onClose={() => setShowProviderNodes(false)}
         onSelectProvider={(provider) => {
           setSelectedProvider(provider);
@@ -869,19 +860,6 @@ const styles = StyleSheet.create({
   activeJobText: {
     fontSize: 12,
     color: colors.text.secondary,
-  },
-  logsContainer: {
-    marginTop: 12,
-  },
-  logsTitle: {
-    fontSize: 12,
-    color: colors.text.tertiary,
-    marginBottom: 4,
-  },
-  logText: {
-    fontSize: 11,
-    color: colors.text.tertiary,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   statusBar: {
     flexDirection: 'row',

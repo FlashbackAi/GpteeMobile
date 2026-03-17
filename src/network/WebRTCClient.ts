@@ -292,7 +292,7 @@ export class WebRTCClient {
       switch (state) {
         case 'connected':
           this.onConnectionStateChange?.('connected');
-          this.onEncryptionReady?.();
+          // Don't call onEncryptionReady here - wait for data channel to open
           break;
         case 'disconnected':
           this.onConnectionStateChange?.('disconnected');
@@ -320,6 +320,8 @@ export class WebRTCClient {
     channel.onopen = () => {
       console.log('[WebRTC] ✅ Data channel open');
       this.onConnectionStateChange?.('connected');
+      // Now that data channel is open and we have encryption, signal ready
+      this.onEncryptionReady?.();
     };
 
     channel.onclose = () => {

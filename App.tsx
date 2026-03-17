@@ -30,13 +30,48 @@ export default function App() {
     setModelPath,
     setModelFilename,
     loadProviderModeEnabled,
+    providerModeEnabled,
+    modelLoaded,
+    setModelLoaded,
+    setModelLoading,
+    modelPath,
+    addLog,
+    loadLocalInferenceMode,
+    connected,
   } = useAppStore();
 
   // ── Load user profile and check model state on mount ──────────────────────
+  const [dataLoaded, setDataLoaded] = useState(false);
+
+  // Track active inference request to handle cancellation
+  const activeRequestRef = React.useRef<{requestId: string, cancelled: boolean} | null>(null);
+
   useEffect(() => {
-    loadUserProfile();
-    loadProviderModeEnabled();
-    checkModelDownloadState();
+    const loadData = async () => {
+      await loadUserProfile();
+      await loadProviderModeEnabled();
+      await loadLocalInferenceMode();
+      await checkModelDownloadState();
+
+      // Load model if downloaded
+      const { modelPath: path, modelDownloaded } = useAppStore.getState();
+      if (modelDownloaded && path && !llamaEngine.isLoaded() && !llamaEngine.isLoading()) {
+        addLog('⏳ Loading model on startup...');
+        setModelLoading(true);
+        try {
+          await llamaEngine.loadModel(path);
+          setModelLoaded(true);
+          setModelLoading(false);
+          addLog('✅ Model loaded successfully');
+        } catch (error: any) {
+          setModelLoading(false);
+          addLog(`❌ Model load failed: ${error.message}`);
+        }
+      }
+
+      setDataLoaded(true); // Signal that data is loaded and we can connect
+    };
+    loadData();
   }, []);
 
   // ── Check if model is downloaded ───────────────────────────────────────────
@@ -52,8 +87,10 @@ export default function App() {
     }
   };
 
-  // ── Connect to relay on mount ──────────────────────────────────────────────
+  // ── Connect to relay after data is loaded ─────────────────────────────────
   useEffect(() => {
+    if (!dataLoaded) return; // Wait for provider mode and profile to load
+
     setPeerId(relayClient.getPeerId());
 
     relayClient.onConnectionChange = (connected) => {
@@ -64,31 +101,122 @@ export default function App() {
       setProviders(providers);
     };
 
+    // Set up provider mode inference request handler (global, always active)
+    relayClient.onInferenceRequest = async (req) => {
+      const { providerModeEnabled: accepting, modelLoaded, addLog } = useAppStore.getState();
+
+      if (!accepting || !modelLoaded) {
+        console.log('[App] Ignoring inference request - not accepting or model not loaded');
+        return;
+      }
+
+      // Track this request
+      activeRequestRef.current = { requestId: req.requestId, cancelled: false };
+
+      addLog(`📥 Request from ${req.from.slice(0, 8)}: "${req.prompt.slice(0, 40)}..."`);
+
+      let tokensEmitted = 0;
+      const startTime = Date.now();
+
+      try {
+        await llamaEngine.complete(
+          req.prompt,
+          (token) => {
+            // Only send token if request hasn't been cancelled
+            if (activeRequestRef.current?.requestId === req.requestId && !activeRequestRef.current.cancelled) {
+              tokensEmitted++;
+              try {
+                relayClient.sendStreamToken(req.from, req.requestId, token);
+              } catch (error) {
+                // WebRTC disconnected - mark as cancelled and stop sending
+                if (activeRequestRef.current) {
+                  activeRequestRef.current.cancelled = true;
+                }
+                console.log('[App] WebRTC disconnected during streaming, stopping token send');
+              }
+            }
+          },
+          req.params,
+        );
+
+        // Only send done if request hasn't been cancelled
+        if (activeRequestRef.current?.requestId === req.requestId && !activeRequestRef.current.cancelled) {
+          const durationMs = Date.now() - startTime;
+          try {
+            relayClient.sendStreamDone(req.from, req.requestId, tokensEmitted, durationMs);
+            addLog(`✅ Completed ${tokensEmitted} tokens in ${(durationMs / 1000).toFixed(1)}s`);
+          } catch (error) {
+            addLog(`⚠️ Completed ${tokensEmitted} tokens but WebRTC disconnected`);
+          }
+        } else {
+          addLog(`🛑 Request cancelled - ${tokensEmitted} tokens generated before stop`);
+        }
+
+        // Clear active request
+        activeRequestRef.current = null;
+      } catch (error: any) {
+        addLog(`❌ Error: ${error.message}`);
+        activeRequestRef.current = null;
+      }
+    };
+
+    // Set up cancel request handler (global)
+    relayClient.onCancelRequest = async (requestId) => {
+      const { addLog } = useAppStore.getState();
+      addLog(`🛑 Cancel request for ${requestId}`);
+
+      // Mark request as cancelled
+      if (activeRequestRef.current?.requestId === requestId) {
+        activeRequestRef.current.cancelled = true;
+      }
+
+      await llamaEngine.stop();
+    };
+
+    // Connect to relay with loaded provider mode state
+    const { providerModeEnabled, userProfile: profile, modelLoaded: isModelLoaded } = useAppStore.getState();
+    const deviceInfo = {
+      platform: Platform.OS,
+      modelLoaded: isModelLoaded,
+      modelName: 'Qwen3.5-0.8B-Q8',
+      acceptingJobs: providerModeEnabled && isModelLoaded, // Must have model loaded to accept jobs
+      displayName: profile?.displayName || 'Unknown Device',
+    };
+    relayClient.connect('user', deviceInfo);
+
     // Clean up on unmount
     return () => {
       relayClient.disconnect();
     };
-  }, []);
+  }, [dataLoaded]);
+
+  // ── Update relay registration when model loads or provider mode changes ───
+  useEffect(() => {
+    if (!connected) return; // Only update if connected to relay
+
+    const deviceInfo = {
+      platform: Platform.OS,
+      modelLoaded: modelLoaded,
+      modelName: 'Qwen3.5-0.8B-Q8',
+      acceptingJobs: providerModeEnabled && modelLoaded,
+      displayName: userProfile?.displayName || 'Unknown Device',
+    };
+    relayClient.updateRegistration(deviceInfo);
+
+    if (modelLoaded && providerModeEnabled) {
+      addLog('✅ Model loaded - provider mode active');
+    }
+  }, [modelLoaded, connected, providerModeEnabled, userProfile]);
 
   // ── Start session ──────────────────────────────────────────────────────────
   const handleStart = () => {
     setStarted(true);
-
-    const deviceInfo = {
-      platform: Platform.OS,
-      modelLoaded: false, // updated when model loads
-      modelName: 'Qwen3.5-0.8B-Q8',
-      acceptingJobs: false, // not accepting jobs by default
-      displayName: userProfile?.displayName || 'Unknown Device',
-    };
-
-    // Connect as user by default, provider mode can be toggled in UI
-    relayClient.connect('user', deviceInfo);
+    // Relay connection already established on mount, just transition to chat screen
   };
 
   // ── Go back to home ────────────────────────────────────────────────────────
   const handleBack = async () => {
-    relayClient.disconnect();
+    // Don't disconnect relay - keep connection alive so provider mode works in HomeScreen
     await llamaEngine.unload();
     reset();
     setStarted(false);

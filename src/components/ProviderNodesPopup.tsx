@@ -15,6 +15,8 @@ import { ProviderInfo } from '../network/PeerProtocol';
 interface Props {
   visible: boolean;
   providers: ProviderInfo[];
+  currentPeerId: string;
+  isAcceptingJobs: boolean;
   onClose: () => void;
   onSelectProvider?: (provider: ProviderInfo) => void;
 }
@@ -28,26 +30,50 @@ interface ProviderStatus {
 export const ProviderNodesPopup: React.FC<Props> = ({
   visible,
   providers,
+  currentPeerId,
+  isAcceptingJobs,
   onClose,
   onSelectProvider,
 }) => {
   const [providerStatuses, setProviderStatuses] = useState<ProviderStatus[]>([]);
 
   useEffect(() => {
-    if (visible && providers.length > 0) {
+    console.log('[ProviderNodesPopup] visible:', visible, 'providers:', providers.length, 'isAcceptingJobs:', isAcceptingJobs);
+    console.log('[ProviderNodesPopup] currentPeerId:', currentPeerId);
+    console.log('[ProviderNodesPopup] providers list:', JSON.stringify(providers.map(p => ({ peerId: p.peerId, displayName: p.displayName }))));
+
+    if (visible) {
+      // Combine own node (if accepting jobs) with other providers
+      const allProviders = [...providers];
+
+      // Add own node if accepting jobs and not already in list
+      if (isAcceptingJobs && !providers.find(p => p.peerId === currentPeerId)) {
+        console.log('[ProviderNodesPopup] Adding own node to list');
+        allProviders.unshift({
+          peerId: currentPeerId,
+          modelName: 'Qwen3.5-0.8B-Q8',
+          platform: 'android',
+          displayName: 'You',
+        });
+      }
+
+      console.log('[ProviderNodesPopup] Total providers to show:', allProviders.length);
+      console.log('[ProviderNodesPopup] All providers:', JSON.stringify(allProviders.map(p => ({ peerId: p.peerId, displayName: p.displayName }))));
+
       // Initialize provider statuses
-      const initialStatuses: ProviderStatus[] = providers.map(p => ({
+      const initialStatuses: ProviderStatus[] = allProviders.map(p => ({
         provider: p,
         ping: null,
         status: 'checking',
       }));
+      console.log('[ProviderNodesPopup] Setting provider statuses:', initialStatuses.length);
       setProviderStatuses(initialStatuses);
 
       // Simulate ping check (in a real implementation, you'd ping the providers)
-      providers.forEach((provider, index) => {
+      allProviders.forEach((provider, index) => {
         setTimeout(() => {
-          // Simulate random ping between 50-200ms
-          const simulatedPing = Math.floor(Math.random() * 150) + 50;
+          // Own node gets 0ms ping, others get simulated ping
+          const simulatedPing = provider.peerId === currentPeerId ? 0 : Math.floor(Math.random() * 150) + 50;
           setProviderStatuses(prev => {
             const updated = [...prev];
             if (updated[index]) {
@@ -61,8 +87,11 @@ export const ProviderNodesPopup: React.FC<Props> = ({
           });
         }, 500 + index * 200); // Stagger the ping checks
       });
+    } else {
+      // Reset when popup closes
+      setProviderStatuses([]);
     }
-  }, [visible, providers]);
+  }, [visible, providers, currentPeerId, isAcceptingJobs]);
 
   const getPingColor = (ping: number | null) => {
     if (ping === null) return colors.text.disabled;
@@ -134,17 +163,19 @@ export const ProviderNodesPopup: React.FC<Props> = ({
                 </Text>
               </View>
             ) : (
-              providerStatuses.map((item, index) => (
+              providerStatuses.map((item, index) => {
+                const isOwnNode = item.provider.peerId === currentPeerId;
+                return (
                 <TouchableOpacity
                   key={item.provider.peerId}
-                  style={styles.providerCard}
+                  style={[styles.providerCard, isOwnNode && styles.providerCardOwn]}
                   onPress={() => {
-                    if (onSelectProvider && item.status === 'online') {
+                    if (onSelectProvider && item.status === 'online' && !isOwnNode) {
                       onSelectProvider(item.provider);
                       onClose();
                     }
                   }}
-                  disabled={item.status !== 'online'}
+                  disabled={item.status !== 'online' || isOwnNode}
                 >
                   <View style={styles.providerHeader}>
                     <View style={styles.providerNameRow}>
@@ -156,6 +187,7 @@ export const ProviderNodesPopup: React.FC<Props> = ({
                       />
                       <Text style={styles.providerName}>
                         {item.provider.displayName || `Provider ${index + 1}`}
+                        {isOwnNode && <Text style={styles.youBadge}> (You)</Text>}
                       </Text>
                     </View>
                     {item.status === 'checking' ? (
@@ -185,14 +217,15 @@ export const ProviderNodesPopup: React.FC<Props> = ({
                     </View>
                   </View>
 
-                  {item.status === 'online' && (
+                  {item.status === 'online' && !isOwnNode && (
                     <View style={styles.selectButton}>
                       <Text style={styles.selectButtonText}>Select Provider</Text>
                       <Icon name="chevron-right" size={16} color={colors.accent.primary} />
                     </View>
                   )}
                 </TouchableOpacity>
-              ))
+                );
+              })
             )}
           </ScrollView>
         </View>
@@ -286,6 +319,16 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  providerCardOwn: {
+    borderColor: colors.accent.primary,
+    borderWidth: 2,
+    backgroundColor: colors.background.secondary,
+  },
+  youBadge: {
+    color: colors.accent.primary,
+    fontWeight: '700',
+    fontSize: 14,
   },
   providerHeader: {
     flexDirection: 'row',

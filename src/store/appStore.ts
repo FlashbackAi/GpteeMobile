@@ -45,6 +45,7 @@ interface AppState {
   // User mode
   providers: ProviderInfo[];
   selectedProvider: ProviderInfo | null;
+  assignedProviderId: string | null; // Sticky session - provider assigned to current chat
   messages: ChatMessage[];
   isGenerating: boolean;
   currentRequestId: string | null;
@@ -52,6 +53,9 @@ interface AppState {
   // Chat history
   chatHistory: ChatHistory[];
   currentChatId: string | null;
+
+  // Logs
+  logs: string[];
 
   // Local inference mode (provider using own device)
   localInferenceMode: boolean;
@@ -77,19 +81,24 @@ interface AppState {
   setModelPath: (path: string | null) => void;
   setProviders: (providers: ProviderInfo[]) => void;
   setSelectedProvider: (p: ProviderInfo | null) => void;
+  setAssignedProviderId: (id: string | null) => void;
   addMessage: (msg: ChatMessage) => void;
   setMessages: (messages: ChatMessage[]) => void;
   appendStreamToken: (requestId: string, token: string) => void;
-  finaliseMessage: (requestId: string, tokensGenerated: number, durationMs: number) => void;
+  finaliseMessage: (requestId: string, tokensGenerated: number, durationMs: number, fulfilledBy?: string) => void;
   setGenerating: (v: boolean) => void;
   setCurrentRequestId: (id: string | null) => void;
-  setLocalInferenceMode: (v: boolean) => void;
+  setLocalInferenceMode: (v: boolean) => Promise<void>;
+  loadLocalInferenceMode: () => Promise<void>;
   clearMessages: () => void;
   saveCurrentChat: () => Promise<void>;
   loadChat: (chatId: string) => Promise<void>;
   loadChatHistory: () => Promise<void>;
   deleteChat: (chatId: string) => Promise<void>;
   startNewChat: () => void;
+  addLog: (msg: string) => void;
+  loadLogs: () => Promise<void>;
+  clearLogs: () => void;
   reset: () => void;
 }
 
@@ -112,11 +121,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   modelPath: null,
   providers: [],
   selectedProvider: null,
+  assignedProviderId: null,
   messages: [],
   isGenerating: false,
   currentRequestId: null,
   chatHistory: [],
   currentChatId: null,
+  logs: [],
   localInferenceMode: false,
 
   setPeerId: (id) => set({ peerId: id }),
@@ -185,10 +196,29 @@ export const useAppStore = create<AppState>((set, get) => ({
   setModelDownloadProgress: (v) => set({ modelDownloadProgress: v }),
   setModelFilename: (filename) => set({ modelFilename: filename }),
   setModelPath: (path) => set({ modelPath: path }),
-  setLocalInferenceMode: (v) => set({ localInferenceMode: v }),
+  setLocalInferenceMode: async (v) => {
+    set({ localInferenceMode: v });
+    try {
+      await AsyncStorage.setItem('localInferenceMode', v ? 'true' : 'false');
+    } catch (e) {
+      console.error('[AppStore] Failed to save local inference mode:', e);
+    }
+  },
+
+  loadLocalInferenceMode: async () => {
+    try {
+      const value = await AsyncStorage.getItem('localInferenceMode');
+      if (value !== null) {
+        set({ localInferenceMode: value === 'true' });
+      }
+    } catch (e) {
+      console.error('[AppStore] Failed to load local inference mode:', e);
+    }
+  },
 
   setProviders: (providers) => set({ providers }),
   setSelectedProvider: (p) => set({ selectedProvider: p }),
+  setAssignedProviderId: (id) => set({ assignedProviderId: id }),
 
   addMessage: (msg) =>
     set((s) => ({ messages: [...s.messages, msg] })),
@@ -220,11 +250,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { messages };
     }),
 
-  finaliseMessage: (requestId, tokensGenerated, durationMs) =>
+  finaliseMessage: (requestId, tokensGenerated, durationMs, fulfilledBy) =>
     set((s) => {
       const messages = s.messages.map((m) =>
         m.id === requestId
-          ? { ...m, streaming: false, tokensGenerated, durationMs }
+          ? { ...m, streaming: false, tokensGenerated, durationMs, fulfilledBy }
           : m,
       );
       return { messages, isGenerating: false, currentRequestId: null };
@@ -325,9 +355,48 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       messages: [],
       currentChatId: null,
+      assignedProviderId: null, // Clear sticky session for new chat
       isGenerating: false,
       currentRequestId: null,
     });
+  },
+
+  // Log management
+  addLog: (msg) => {
+    const timestamp = new Date().toLocaleTimeString();
+    const logEntry = `[${timestamp}] ${msg}`;
+
+    set((s) => {
+      const newLogs = [...s.logs, logEntry].slice(-100); // Keep last 100 logs
+
+      // Save to AsyncStorage
+      AsyncStorage.setItem('activity_logs', JSON.stringify(newLogs)).catch(e => {
+        console.error('[AppStore] Failed to save logs:', e);
+      });
+
+      return { logs: newLogs };
+    });
+  },
+
+  loadLogs: async () => {
+    try {
+      const logsJson = await AsyncStorage.getItem('activity_logs');
+      if (logsJson) {
+        const logs = JSON.parse(logsJson);
+        set({ logs });
+      }
+    } catch (e) {
+      console.error('[AppStore] Failed to load logs:', e);
+    }
+  },
+
+  clearLogs: async () => {
+    try {
+      await AsyncStorage.removeItem('activity_logs');
+      set({ logs: [] });
+    } catch (e) {
+      console.error('[AppStore] Failed to clear logs:', e);
+    }
   },
 
   reset: () =>

@@ -273,19 +273,17 @@ class RelayClient {
     this.webrtcClient.onConnectionStateChange = (state) => {
       console.log(`[RelayClient] WebRTC connection state: ${state}`);
 
-      if (state === 'connected') {
-        // WebRTC connected, flush queued messages
-        this.flushMessageQueue();
-      } else if (state === 'failed' || state === 'disconnected') {
+      if (state === 'failed' || state === 'disconnected') {
         // WebRTC failed, flush queue via relay
         this.flushMessageQueueViaRelay();
       }
+      // Don't flush on 'connected' - wait for encryption ready to ensure data channel is open
     };
 
     this.webrtcClient.onEncryptionReady = () => {
       console.log('[RelayClient] ✅ WebRTC encryption ready');
       this.webrtcInitializing = false;
-      // Flush any queued messages now that encryption is ready
+      // Flush any queued messages now that encryption AND data channel are ready
       this.flushMessageQueue();
     };
   }
@@ -338,8 +336,8 @@ class RelayClient {
       params: params ?? { maxTokens: 2048, temperature: 0.7 },
     };
 
-    // If WebRTC is enabled and this is to a provider, initiate WebRTC connection
-    if (this.useWebRTC && this.role === 'user' && !this.webrtcClient && !this.webrtcInitializing) {
+    // If WebRTC is enabled, initiate WebRTC connection (both users and providers can initiate)
+    if (this.useWebRTC && !this.webrtcClient && !this.webrtcInitializing) {
       console.log('[RelayClient] Starting WebRTC connection for provider');
       this.initiateWebRTC(providerId).catch(err => {
         console.error('[RelayClient] ❌ WebRTC initiation failed:', err);

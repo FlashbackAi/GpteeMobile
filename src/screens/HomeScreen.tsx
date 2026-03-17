@@ -7,12 +7,16 @@ import {
   SafeAreaView,
   StatusBar,
   Switch,
+  Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import { useAppStore } from '../store/appStore';
 import { colors } from '../theme/colors';
 import { NodeInfoPopup } from '../components/NodeInfoPopup';
+import { LogsPopup } from '../components/LogsPopup';
+import { ProviderNodesPopup } from '../components/ProviderNodesPopup';
 import { Sidebar } from '../components/Sidebar';
+import { relayClient } from '../network/RelayClient';
 
 interface Props {
   onSelectRole: () => void;
@@ -22,6 +26,7 @@ interface Props {
 export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
   const connected = useAppStore((s) => s.connected);
   const modelDownloaded = useAppStore((s) => s.modelDownloaded);
+  const modelLoaded = useAppStore((s) => s.modelLoaded);
   const providerModeEnabled = useAppStore((s) => s.providerModeEnabled);
   const setProviderModeEnabled = useAppStore((s) => s.setProviderModeEnabled);
   const userProfile = useAppStore((s) => s.userProfile);
@@ -29,13 +34,26 @@ export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
   const currentChatId = useAppStore((s) => s.currentChatId);
   const loadChat = useAppStore((s) => s.loadChat);
   const loadChatHistory = useAppStore((s) => s.loadChatHistory);
+  const logs = useAppStore((s) => s.logs);
+  const loadLogs = useAppStore((s) => s.loadLogs);
+  const clearLogs = useAppStore((s) => s.clearLogs);
+  const providers = useAppStore((s) => s.providers);
+  const peerId = useAppStore((s) => s.peerId);
+  const setSelectedProvider = useAppStore((s) => s.setSelectedProvider);
+  const addLog = useAppStore((s) => s.addLog);
   const [showNodeInfo, setShowNodeInfo] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
+  const [showProviderNodes, setShowProviderNodes] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
 
-  // Load chat history on mount
+  // Load chat history and logs on mount
   useEffect(() => {
     loadChatHistory();
+    loadLogs();
   }, []);
+
+  // Registration updates are handled globally in App.tsx
+  // No need to duplicate here to avoid race conditions
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -60,6 +78,10 @@ export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
                 <Text style={styles.nodeChipText}>Node</Text>
                 <Icon name="terminal" size={14} color={colors.text.primary} />
               </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowLogs(true)} style={styles.logsChip}>
+                <Text style={styles.logsChipText}>Logs</Text>
+                <Icon name="file-text" size={14} color={colors.text.primary} />
+              </TouchableOpacity>
               <TouchableOpacity onPress={onOpenProfile} style={styles.profileButton}>
                 <Icon name="settings" size={20} color={colors.text.primary} />
               </TouchableOpacity>
@@ -70,6 +92,16 @@ export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
             <Text style={styles.statusText}>
               {connected ? 'Relay connected' : 'Connecting...'}
             </Text>
+            {providers.length > 0 && (
+              <>
+                <Text style={styles.statusText}>•</Text>
+                <TouchableOpacity onPress={() => setShowProviderNodes(true)}>
+                  <Text style={[styles.statusText, styles.statusTextLink]}>
+                    {`${providers.length} provider${providers.length !== 1 ? 's' : ''}`}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </View>
 
@@ -79,6 +111,28 @@ export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
           onClose={() => setShowNodeInfo(false)}
           connected={connected && providerModeEnabled}
           displayName={userProfile?.displayName || 'My Device'}
+        />
+
+        {/* Logs Popup */}
+        <LogsPopup
+          visible={showLogs}
+          logs={logs}
+          onClose={() => setShowLogs(false)}
+          onClearLogs={clearLogs}
+        />
+
+        {/* Provider Nodes Popup */}
+        <ProviderNodesPopup
+          visible={showProviderNodes}
+          providers={providers}
+          currentPeerId={peerId}
+          isAcceptingJobs={providerModeEnabled && modelLoaded}
+          onClose={() => setShowProviderNodes(false)}
+          onSelectProvider={(provider) => {
+            setSelectedProvider(provider);
+            addLog(`✅ Selected provider: ${provider.displayName || provider.peerId}`);
+            setShowProviderNodes(false);
+          }}
         />
 
         {/* Main content */}
@@ -108,7 +162,7 @@ export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
             {providerModeEnabled && (
               <View style={styles.providerActiveInfo}>
                 <Text style={styles.providerActiveText}>
-                  ✓ Provider mode will be enabled when you start the chat
+                  ✓ Provider mode active - your device is now visible to the network
                 </Text>
               </View>
             )}
@@ -203,6 +257,22 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
   },
+  logsChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: colors.background.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  logsChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text.primary,
+  },
   profileButton: {
     padding: 8,
     borderRadius: 8,
@@ -241,6 +311,10 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 12,
     color: colors.text.tertiary,
+  },
+  statusTextLink: {
+    color: colors.accent.primary,
+    fontWeight: '600',
   },
   content: {
     flex: 1,
