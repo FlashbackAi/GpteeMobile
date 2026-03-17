@@ -14,7 +14,6 @@ import { useAppStore } from '../store/appStore';
 import { colors } from '../theme/colors';
 import { NodeInfoPopup } from '../components/NodeInfoPopup';
 import { LogsPopup } from '../components/LogsPopup';
-import { ProviderNodesPopup } from '../components/ProviderNodesPopup';
 import { Sidebar } from '../components/Sidebar';
 import { relayClient } from '../network/RelayClient';
 
@@ -43,7 +42,6 @@ export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
   const addLog = useAppStore((s) => s.addLog);
   const [showNodeInfo, setShowNodeInfo] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
-  const [showProviderNodes, setShowProviderNodes] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
 
   // Load chat history and logs on mount
@@ -87,30 +85,35 @@ export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
               </TouchableOpacity>
             </View>
           </View>
-          <View style={styles.statusRow}>
+          {/* <View style={styles.statusRow}>
             <View style={[styles.dot, connected ? styles.dotGreen : styles.dotRed]} />
             <Text style={styles.statusText}>
-              {connected ? 'Relay connected' : 'Connecting...'}
+              {connected ? 'Connected' : 'Connecting...'}
             </Text>
             {providers.length > 0 && (
               <>
                 <Text style={styles.statusText}>•</Text>
-                <TouchableOpacity onPress={() => setShowProviderNodes(true)}>
+                <TouchableOpacity onPress={() => setShowNodeInfo(true)}>
                   <Text style={[styles.statusText, styles.statusTextLink]}>
                     {`${providers.length} provider${providers.length !== 1 ? 's' : ''}`}
                   </Text>
                 </TouchableOpacity>
               </>
             )}
-          </View>
+          </View> */}
         </View>
 
         {/* Node Info Popup */}
         <NodeInfoPopup
           visible={showNodeInfo}
           onClose={() => setShowNodeInfo(false)}
-          connected={connected && providerModeEnabled}
-          displayName={userProfile?.displayName || 'My Device'}
+          connected={connected}
+          providers={providers}
+          currentPeerId={peerId}
+          onSelectProvider={(provider) => {
+            setSelectedProvider(provider);
+            addLog(`✅ Selected provider: ${provider.displayName || provider.peerId}`);
+          }}
         />
 
         {/* Logs Popup */}
@@ -119,20 +122,6 @@ export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
           logs={logs}
           onClose={() => setShowLogs(false)}
           onClearLogs={clearLogs}
-        />
-
-        {/* Provider Nodes Popup */}
-        <ProviderNodesPopup
-          visible={showProviderNodes}
-          providers={providers}
-          currentPeerId={peerId}
-          isAcceptingJobs={providerModeEnabled && modelLoaded}
-          onClose={() => setShowProviderNodes(false)}
-          onSelectProvider={(provider) => {
-            setSelectedProvider(provider);
-            addLog(`✅ Selected provider: ${provider.displayName || provider.peerId}`);
-            setShowProviderNodes(false);
-          }}
         />
 
         {/* Main content */}

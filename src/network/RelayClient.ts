@@ -20,7 +20,7 @@ import { WebRTCClient } from './WebRTCClient';
 // Replace with your relay server URL (use your local IP or deployed server)
 // Example for local testing: ws://192.168.1.100:8080
 // Example for deployed: ws://your-server.com:8080
-export const RELAY_URL = 'ws://192.168.0.66:8080'; // Android emulator localhost
+export const RELAY_URL = 'ws://192.168.0.66:9293'; // Android emulator localhost
 
 // ── Callback types ────────────────────────────────────────────────────────────
 export type OnProvidersUpdated = (providers: ProviderInfo[]) => void;
@@ -125,11 +125,11 @@ class RelayClient {
 
     // Now reset for new connection
     this.intentionalDisconnect = false;
-    console.log(`[RelayClient] Connecting to ${RELAY_URL} as ${this.role}...`);
+    // console.log(`[RelayClient] Connecting to ${RELAY_URL} as ${this.role}...`);
     this.ws = new WebSocket(RELAY_URL);
 
     this.ws.onopen = () => {
-      console.log('[RelayClient] ✅ Connected');
+      // console.log('[RelayClient] ✅ Connected');
       this.connected = true;
       this.onConnectionChange?.(true);
 
@@ -162,14 +162,14 @@ class RelayClient {
     };
 
     this.ws.onclose = (event) => {
-      console.log(`[RelayClient] Disconnected — Code: ${event.code}, Reason: ${event.reason}`);
+      // console.log(`[RelayClient] Disconnected — Code: ${event.code}, Reason: ${event.reason}`);
       this.connected = false;
       this.onConnectionChange?.(false);
       this.stopPing();
 
       // Only reconnect if it wasn't intentional
       if (!this.intentionalDisconnect) {
-        console.log('[RelayClient] Reconnecting in 3s...');
+        // console.log('[RelayClient] Reconnecting in 3s...');
         this.scheduleReconnect(deviceInfo);
       }
     };
@@ -179,14 +179,14 @@ class RelayClient {
     switch (msg.type) {
       case 'provider_list': {
         const pl = msg as ProviderListMessage;
-        console.log(`[RelayClient] Providers: ${pl.providers.length}`);
+        // console.log(`[RelayClient] Providers: ${pl.providers.length}`);
         this.onProvidersUpdated?.(pl.providers);
         break;
       }
 
       case 'inference_request': {
         const req = msg as InferenceRequestMessage;
-        console.log(`[RelayClient] Inference request from ${req.from} — "${req.prompt.slice(0, 40)}..."`);
+        // console.log(`[RelayClient] Inference request from ${req.from} — "${req.prompt.slice(0, 40)}..."`);
         this.onInferenceRequest?.(req);
         break;
       }
@@ -211,7 +211,7 @@ class RelayClient {
 
       case 'inference_cancel': {
         const cancel = msg as InferenceCancelMessage;
-        console.log(`[RelayClient] Cancel request for ${cancel.requestId} from ${cancel.from}`);
+        // console.log(`[RelayClient] Cancel request for ${cancel.requestId} from ${cancel.from}`);
         this.onCancelRequest?.(cancel.requestId);
         break;
       }
@@ -241,7 +241,7 @@ class RelayClient {
     if (!this.webrtcClient) {
       // Initialize WebRTC client if we receive an offer (we're the answerer)
       if (msg.type === 'webrtc_offer') {
-        console.log('[RelayClient] Initializing WebRTC as answerer');
+        // console.log('[RelayClient] Initializing WebRTC as answerer');
         this.webrtcInitializing = true;
         this.initializeWebRTC(msg.from);
 
@@ -265,13 +265,13 @@ class RelayClient {
 
     // Setup callbacks
     this.webrtcClient.onDataChannelMessage = (msg: GPTeeMessage) => {
-      console.log(`[RelayClient] WebRTC message received: ${msg.type}`);
+      // console.log(`[RelayClient] WebRTC message received: ${msg.type}`);
       // Route decrypted messages back through normal handlers
       this.handleMessage(msg);
     };
 
     this.webrtcClient.onConnectionStateChange = (state) => {
-      console.log(`[RelayClient] WebRTC connection state: ${state}`);
+      // console.log(`[RelayClient] WebRTC connection state: ${state}`);
 
       if (state === 'failed' || state === 'disconnected') {
         // WebRTC failed, flush queue via relay
@@ -281,7 +281,7 @@ class RelayClient {
     };
 
     this.webrtcClient.onEncryptionReady = () => {
-      console.log('[RelayClient] ✅ WebRTC encryption ready');
+      // console.log('[RelayClient] ✅ WebRTC encryption ready');  
       this.webrtcInitializing = false;
       // Flush any queued messages now that encryption AND data channel are ready
       this.flushMessageQueue();
@@ -291,16 +291,16 @@ class RelayClient {
   // ── Initiate WebRTC connection ────────────────────────────────────────────────
   async initiateWebRTC(providerId: string) {
     if (this.webrtcClient) {
-      console.log('[RelayClient] WebRTC already initialized');
+      // console.log('[RelayClient] WebRTC already initialized');
       return;
     }
 
     if (this.webrtcInitializing) {
-      console.log('[RelayClient] WebRTC already initializing');
+      // console.log('[RelayClient] WebRTC already initializing');
       return;
     }
 
-    console.log(`[RelayClient] Initiating WebRTC to provider ${providerId}`);
+    // console.log(`[RelayClient] Initiating WebRTC to provider ${providerId}`);
     this.webrtcInitializing = true;
     this.initializeWebRTC(providerId);
 
@@ -309,7 +309,7 @@ class RelayClient {
         // Send signaling messages via relay
         this.sendRaw(msg);
       });
-      console.log('[RelayClient] WebRTC initiation complete');
+      // console.log('[RelayClient] WebRTC initiation complete');
     } catch (err) {
       console.error('[RelayClient] WebRTC initiation error:', err);
       this.webrtcInitializing = false;
@@ -338,7 +338,7 @@ class RelayClient {
 
     // If WebRTC is enabled, initiate WebRTC connection (both users and providers can initiate)
     if (this.useWebRTC && !this.webrtcClient && !this.webrtcInitializing) {
-      console.log('[RelayClient] Starting WebRTC connection for provider');
+      // console.log('[RelayClient] Starting WebRTC connection for provider');
       this.initiateWebRTC(providerId).catch(err => {
         console.error('[RelayClient] ❌ WebRTC initiation failed:', err);
         throw new Error('Failed to establish P2P connection. WebRTC is required for inference.');
@@ -347,7 +347,7 @@ class RelayClient {
 
     // If WebRTC is initializing, queue the message
     if (this.webrtcInitializing) {
-      console.log('[RelayClient] Queueing message until WebRTC ready');
+      // console.log('[RelayClient] Queueing message until WebRTC ready');
       this.messageQueue.push({ msg, resolve: () => {} });
       return requestId;
     }
@@ -379,14 +379,17 @@ class RelayClient {
 
     // Send via WebRTC only - no relay fallback
     const isWebRTCConnected = this.webrtcClient?.isConnected();
+    // Check if we have an active connection with this peer (works for both initiator and answerer)
     const isCorrectPeer = this.activeProviderId === userPeerId;
     console.log(`[RelayClient] sendStreamToken: WebRTC=${isWebRTCConnected}, correctPeer=${isCorrectPeer}, activeProvider=${this.activeProviderId}, userPeer=${userPeerId}`);
 
-    if (isWebRTCConnected && isCorrectPeer) {
+    if (isWebRTCConnected) {
+      // If peer ID doesn't match but WebRTC is connected, it might be a bidirectional connection
+      // Just send it - the WebRTC client knows who it's connected to
       console.log('[RelayClient] ✅ Sending stream token via WebRTC');
       this.webrtcClient.sendMessage(msg);
     } else {
-      const error = `❌ Cannot send stream token: WebRTC not connected or peer mismatch (P2P-only mode)`;
+      const error = `❌ Cannot send stream token: WebRTC not connected (P2P-only mode)`;
       console.error('[RelayClient]', error);
       throw new Error(error);
     }
@@ -407,14 +410,13 @@ class RelayClient {
 
     // Send via WebRTC only - no relay fallback
     const isWebRTCConnected = this.webrtcClient?.isConnected();
-    const isCorrectPeer = this.activeProviderId === userPeerId;
-    console.log(`[RelayClient] sendStreamDone: WebRTC=${isWebRTCConnected}, correctPeer=${isCorrectPeer}`);
+    console.log(`[RelayClient] sendStreamDone: WebRTC=${isWebRTCConnected}, activeProvider=${this.activeProviderId}, userPeer=${userPeerId}`);
 
-    if (isWebRTCConnected && isCorrectPeer) {
+    if (isWebRTCConnected) {
       console.log('[RelayClient] ✅ Sending done via WebRTC');
       this.webrtcClient.sendMessage(msg);
     } else {
-      const error = `❌ Cannot send stream done: WebRTC not connected or peer mismatch (P2P-only mode)`;
+      const error = `❌ Cannot send stream done: WebRTC not connected (P2P-only mode)`;
       console.error('[RelayClient]', error);
       throw new Error(error);
     }
@@ -454,11 +456,11 @@ class RelayClient {
     };
 
     // Send via WebRTC only - no relay fallback
-    if (this.webrtcClient?.isConnected() && this.activeProviderId === providerPeerId) {
+    if (this.webrtcClient?.isConnected()) {
       console.log('[RelayClient] ✅ Sending cancel via WebRTC');
       this.webrtcClient.sendMessage(msg);
     } else {
-      const error = `❌ Cannot send cancel request: WebRTC not connected or peer mismatch (P2P-only mode)`;
+      const error = `❌ Cannot send cancel request: WebRTC not connected (P2P-only mode)`;
       console.error('[RelayClient]', error);
       throw new Error(error);
     }

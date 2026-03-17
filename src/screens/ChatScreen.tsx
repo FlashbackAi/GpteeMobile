@@ -12,7 +12,6 @@ import { ChatMessage, ProviderInfo, InferenceRequestMessage } from '../network/P
 import { llamaEngine } from '../inference/LlamaEngine';
 import { colors } from '../theme/colors';
 import ProviderService from '../services/ProviderService';
-import { ProviderNodesPopup } from '../components/ProviderNodesPopup';
 import { NodeInfoPopup } from '../components/NodeInfoPopup';
 import { Sidebar } from '../components/Sidebar';
 
@@ -27,7 +26,6 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
   const [accepting, setAccepting] = useState(false);
   const [providerExpanded, setProviderExpanded] = useState(false);
   const [activeJob, setActiveJob] = useState<any>(null);
-  const [showProviderNodes, setShowProviderNodes] = useState(false);
   const [showNodeInfo, setShowNodeInfo] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
   const flatListRef = useRef<FlatList>(null);
@@ -579,8 +577,13 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
         <NodeInfoPopup
           visible={showNodeInfo}
           onClose={() => setShowNodeInfo(false)}
-          connected={connected && providerModeEnabled}
-          displayName={userProfile?.displayName || 'My Device'}
+          connected={connected}
+          providers={providers}
+          currentPeerId={peerId}
+          onSelectProvider={(provider) => {
+            setSelectedProvider(provider);
+            addLog(`✅ Selected provider: ${provider.displayName || provider.peerId}`);
+          }}
         />
 
         {/* Provider panel */}
@@ -595,8 +598,8 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
           <Text style={styles.statusText}>•</Text>
           {!useLocalModel && providers.length > 0 ? (
             <TouchableOpacity onPress={() => {
-              console.log('[ChatScreen] Opening provider nodes popup');
-              setShowProviderNodes(true);
+              console.log('[ChatScreen] Opening node info popup');
+              setShowNodeInfo(true);
             }} style={styles.providersButton}>
               <Text style={styles.statusTextLink}>
                 {`${providers.length} provider${providers.length !== 1 ? 's' : ''}`}
@@ -710,18 +713,6 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
         </View>
       </KeyboardAvoidingView>
 
-      {/* Provider Nodes Popup */}
-      <ProviderNodesPopup
-        visible={showProviderNodes}
-        providers={providers}
-        currentPeerId={peerId}
-        isAcceptingJobs={providerModeEnabled && modelLoaded}
-        onClose={() => setShowProviderNodes(false)}
-        onSelectProvider={(provider) => {
-          setSelectedProvider(provider);
-          addLog(`✅ Selected provider: ${provider.displayName || provider.peerId}`);
-        }}
-      />
 
       {/* Sidebar */}
       <Sidebar
