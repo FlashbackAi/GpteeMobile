@@ -496,7 +496,8 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
 
     // Extract thinking content
     let thinkingContent = '';
-    let displayContent = item.content;
+    // Ensure content is always a string
+    let displayContent = String(item.content || '');
 
     if (!isUser) {
       // Check if we're still in thinking phase (has <think> but no </think> yet, or no content after </think>)
@@ -536,7 +537,7 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
 
     // Return minimal view if nothing to display
     if (!displayContent && !thinkingContent) {
-      return <View style={{ height: 1 }} />;
+      return <View key={item.id} style={{ height: 1 }} />;
     }
 
     return (
@@ -566,7 +567,7 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
             {item.streaming && <ActivityIndicator size="small" color={colors.accent.primary} style={styles.cursor} />}
             {!item.streaming && item.tokensGenerated && item.tokensGenerated > 0 && (
               <Text style={styles.metaText}>
-                {`${item.tokensGenerated} tokens · ${item.durationMs || 0}ms · ${item.durationMs ? (item.tokensGenerated / (item.durationMs / 1000)).toFixed(1) : '0'} t/s${item.fulfilledBy && typeof item.fulfilledBy === 'string' && item.fulfilledBy.length > 0 ? ` · ${item.fulfilledBy}` : ''}`}
+                {`${item.tokensGenerated} tokens · ${item.durationMs || 0}ms · ${item.durationMs ? (item.tokensGenerated / (item.durationMs / 1000)).toFixed(1) : '0'} t/s${item.fulfilledBy && String(item.fulfilledBy).length > 0 ? ` · ${String(item.fulfilledBy)}` : ''}`}
               </Text>
             )}
           </View>
