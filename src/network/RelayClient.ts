@@ -26,7 +26,7 @@ import { WebRTCClient } from './WebRTCClient';
 // Example for local testing: ws://192.168.1.100:8080
 // Example for deployed: ws://your-server.com:8080
 // **** AWS EIP: 13.126.31.242*****
-export const RELAY_URL = 'ws://192.168.0.66:9293'; // Android emulator localhost
+export const RELAY_URL = 'ws://13.126.31.242:9293'; // Android emulator localhost
 
 // ── Callback types ────────────────────────────────────────────────────────────
 export type OnProvidersUpdated = (providers: ProviderInfo[]) => void;
@@ -274,6 +274,10 @@ class RelayClient {
 
       case 'inference_stream': {
         const stream = msg as InferenceStreamMessage;
+
+        // Reset timeout on each token - this is activity, not a stall
+        this.resetRequestTimeout(stream.requestId);
+
         this.onStreamToken?.(stream.requestId, stream.token);
         break;
       }
@@ -468,9 +472,10 @@ class RelayClient {
     });
 
     // Track this request for client-side failover
+    // Use 60s idle timeout (resets on each token received)
     const timeoutTimer = setTimeout(() => {
       this.handleRequestTimeout(requestId);
-    }, 30000); // 30 second timeout
+    }, 60000); // 60 second idle timeout
 
     this.pendingRequests.set(requestId, {
       requestId,
@@ -536,15 +541,31 @@ class RelayClient {
     return requestId;
   }
 
-  // ── Handle request timeout (30s no response) ──────────────────────────────────
+  // ── Handle request timeout (60s idle - no activity) ───────────────────────────
   private handleRequestTimeout(requestId: string) {
     const pending = this.pendingRequests.get(requestId);
     if (!pending) return;
 
-    console.log(`[RelayClient] ⏰ Request ${requestId} timed out after 30s`);
+    console.log(`[RelayClient] ⏰ Request ${requestId} timed out after 60s of inactivity`);
 
     // Retry with next provider
     this.retryWithNextProvider(requestId);
+  }
+
+  // ── Reset timeout timer (called on each token received) ───────────────────────
+  private resetRequestTimeout(requestId: string) {
+    const pending = this.pendingRequests.get(requestId);
+    if (!pending) return;
+
+    // Clear existing timeout
+    if (pending.timeoutTimer) {
+      clearTimeout(pending.timeoutTimer);
+    }
+
+    // Set new timeout - 60s of inactivity
+    pending.timeoutTimer = setTimeout(() => {
+      this.handleRequestTimeout(requestId);
+    }, 60000); // 60 seconds idle timeout
   }
 
   // ── Retry with next available provider ────────────────────────────────────────
@@ -585,7 +606,7 @@ class RelayClient {
     }
     pending.timeoutTimer = setTimeout(() => {
       this.handleRequestTimeout(requestId);
-    }, 30000);
+    }, 60000); // 60 second idle timeout
 
     // Notify UI about provider switch
     this.onProviderFailover?.(requestId, nextProvider.displayName || 'Unknown', 0);

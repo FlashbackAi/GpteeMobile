@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Alert,
   Platform,
+  Switch,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import DeviceInfo from 'react-native-device-info';
@@ -17,6 +18,7 @@ import {
   AVAILABLE_MODELS,
 } from '../services/ModelDownloadManager';
 import { colors } from '../theme/colors';
+import { Accordion } from '../components/Accordion';
 
 export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const {
@@ -32,6 +34,12 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     batteryThreshold,
     setBatteryThreshold,
     loadBatteryThreshold,
+    providerModeEnabled,
+    setProviderModeEnabled,
+    userProfile,
+    peerId,
+    nodeStats,
+    loadNodeStats,
   } = useAppStore();
 
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
@@ -47,6 +55,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     loadDownloadedModels();
     loadBatteryInfo();
     loadBatteryThreshold(); // Load saved threshold
+    loadNodeStats(); // Load node statistics
 
     // Refresh memory info every 3 seconds
     const memInterval = setInterval(async () => {
@@ -147,6 +156,21 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     }
   };
 
+  const formatUptime = (sessionStartTime: number) => {
+    const startTime = sessionStartTime || Date.now();
+    const uptimeMs = Date.now() - startTime;
+    const hours = Math.floor(uptimeMs / (1000 * 60 * 60));
+    const minutes = Math.floor((uptimeMs % (1000 * 60 * 60)) / (1000 * 60));
+    return `${hours}h ${minutes}m`;
+  };
+
+  const formatNumber = (num: number) => {
+    const value = num || 0;
+    if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
+    if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
+    return value.toString();
+  };
+
   const handleDeleteModel = async () => {
     const model = AVAILABLE_MODELS[0];
 
@@ -191,222 +215,395 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <Text style={styles.title}>Profile</Text>
       </View>
 
-      <ScrollView style={styles.scrollView}>
-        {/* System Info */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>System Information</Text>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {/* Profile Section */}
+        <Accordion title="Profile" icon="user" defaultExpanded={true}>
+          <View style={styles.accordionContent}>
+            <View style={styles.styledBoxContainer}>
+              <View style={styles.styledBoxLabel}>
+                <Text style={styles.styledBoxLabelText}>DISPLAY NAME</Text>
+              </View>
+              <View style={styles.styledBox}>
+                <Text style={styles.styledBoxValue}>{userProfile?.displayName || 'Not set'}</Text>
+              </View>
+            </View>
+
+            <View style={styles.styledBoxContainer}>
+              <View style={styles.styledBoxLabel}>
+                <Text style={styles.styledBoxLabelText}>PEER ID</Text>
+              </View>
+              <View style={styles.styledBox}>
+                <Text style={styles.styledBoxValue}>{peerId}</Text>
+              </View>
+            </View>
+          </View>
+        </Accordion>
+
+        {/* Node Statistics */}
+        <Accordion title="Node Statistics" icon="bar-chart-2" defaultExpanded={false}>
+          <View style={styles.accordionContent}>
+            {/* Row 1: Requests & Tokens */}
+            <View style={styles.statsRow}>
+              <View style={styles.statBoxContainer}>
+                <View style={styles.statBoxLabel}>
+                  <Text style={styles.statBoxLabelText}>SERVED</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={styles.statBoxValue}>{formatNumber(nodeStats.totalRequestsServed)}</Text>
+                  <Text style={styles.statBoxUnit}>requests</Text>
+                </View>
+              </View>
+
+              <View style={styles.statBoxContainer}>
+                <View style={styles.statBoxLabel}>
+                  <Text style={styles.statBoxLabelText}>TOKENS</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={styles.statBoxValue}>{formatNumber(nodeStats.totalTokensGenerated)}</Text>
+                  <Text style={styles.statBoxUnit}>generated</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Row 2: Self & Uptime */}
+            <View style={styles.statsRow}>
+              <View style={styles.statBoxContainer}>
+                <View style={styles.statBoxLabel}>
+                  <Text style={styles.statBoxLabelText}>SELF</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={styles.statBoxValue}>{formatNumber(nodeStats.totalSelfRequests)}</Text>
+                  <Text style={styles.statBoxUnit}>local</Text>
+                </View>
+              </View>
+
+              <View style={styles.statBoxContainer}>
+                <View style={styles.statBoxLabel}>
+                  <Text style={styles.statBoxLabelText}>UPTIME</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={styles.statBoxValue}>{formatUptime(nodeStats.sessionStartTime)}</Text>
+                  <Text style={styles.statBoxUnit}>session</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Row 3: Performance Metrics */}
+            <View style={styles.statsRow}>
+              <View style={styles.statBoxContainer}>
+                <View style={styles.statBoxLabel}>
+                  <Text style={styles.statBoxLabelText}>PEAK T/S</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={styles.statBoxValue}>
+                    {(nodeStats.peakTokensPerSecond || 0) > 0 ? (nodeStats.peakTokensPerSecond || 0).toFixed(1) : '0.0'}
+                  </Text>
+                  <Text style={styles.statBoxUnit}>tok/sec</Text>
+                </View>
+              </View>
+
+              <View style={styles.statBoxContainer}>
+                <View style={styles.statBoxLabel}>
+                  <Text style={styles.statBoxLabelText}>AVG T/S</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={styles.statBoxValue}>
+                    {(() => {
+                      const totalTokens = (nodeStats.totalTokensGenerated || 0) + (nodeStats.totalSelfTokensReceived || 0);
+                      const totalTimeMs = (nodeStats.totalProviderTimeMs || 0) + (nodeStats.totalSelfTimeMs || 0);
+                      const avgTps = totalTimeMs > 0 ? (totalTokens / (totalTimeMs / 1000)).toFixed(1) : '0.0';
+                      return avgTps;
+                    })()}
+                  </Text>
+                  <Text style={styles.statBoxUnit}>tok/sec</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Row 4: Low & Avg Time */}
+            <View style={styles.statsRow}>
+              <View style={styles.statBoxContainer}>
+                <View style={styles.statBoxLabel}>
+                  <Text style={styles.statBoxLabelText}>LOW T/S</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={styles.statBoxValue}>
+                    {(nodeStats.lowestTokensPerSecond || 0) < Infinity && (nodeStats.lowestTokensPerSecond || 0) > 0
+                      ? (nodeStats.lowestTokensPerSecond || 0).toFixed(1)
+                      : '0.0'}
+                  </Text>
+                  <Text style={styles.statBoxUnit}>tok/sec</Text>
+                </View>
+              </View>
+
+              <View style={styles.statBoxContainer}>
+                <View style={styles.statBoxLabel}>
+                  <Text style={styles.statBoxLabelText}>AVG TIME</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={styles.statBoxValue}>
+                    {(() => {
+                      const totalRequests = (nodeStats.totalRequestsServed || 0) + (nodeStats.totalSelfRequests || 0);
+                      const totalTimeMs = (nodeStats.totalProviderTimeMs || 0) + (nodeStats.totalSelfTimeMs || 0);
+                      const avgResponseTime = totalRequests > 0 ? ((totalTimeMs / totalRequests) / 1000).toFixed(1) : '0.0';
+                      return avgResponseTime;
+                    })()}s
+                  </Text>
+                  <Text style={styles.statBoxUnit}>response</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Accordion>
+
+        {/* Device Information */}
+        <Accordion title="Device Information" icon="smartphone" defaultExpanded={false}>
+          <View style={styles.accordionContent}>
           {systemInfo && (
             <>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Device:</Text>
-                <Text style={styles.infoValue}>{systemInfo.deviceModel}</Text>
+              <View style={styles.styledBoxContainer}>
+                <View style={styles.styledBoxLabel}>
+                  <Text style={styles.styledBoxLabelText}>DEVICE</Text>
+                </View>
+                <View style={styles.styledBox}>
+                  <Text style={styles.styledBoxValue}>{systemInfo.deviceModel}</Text>
+                </View>
               </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>OS Version:</Text>
-                <Text style={styles.infoValue}>{systemInfo.osVersion}</Text>
+
+              <View style={styles.styledBoxContainer}>
+                <View style={styles.styledBoxLabel}>
+                  <Text style={styles.styledBoxLabelText}>OS VERSION</Text>
+                </View>
+                <View style={styles.styledBox}>
+                  <Text style={styles.styledBoxValue}>{systemInfo.osVersion}</Text>
+                </View>
               </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>CPU Architecture:</Text>
-                <Text style={styles.infoValue}>{systemInfo.cpuArch}</Text>
+
+              <View style={styles.styledBoxContainer}>
+                <View style={styles.styledBoxLabel}>
+                  <Text style={styles.styledBoxLabelText}>CPU ARCHITECTURE</Text>
+                </View>
+                <View style={styles.styledBox}>
+                  <Text style={styles.styledBoxValue}>{systemInfo.cpuArch}</Text>
+                </View>
               </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Total RAM:</Text>
-                <Text style={styles.infoValue}>
-                  {HardwareMonitor.formatBytes(systemInfo.totalRAM)}
-                </Text>
+
+              <View style={styles.styledBoxContainer}>
+                <View style={styles.styledBoxLabel}>
+                  <Text style={styles.styledBoxLabelText}>TOTAL RAM</Text>
+                </View>
+                <View style={styles.styledBox}>
+                  <Text style={styles.styledBoxValue}>
+                    {HardwareMonitor.formatBytes(systemInfo.totalRAM)}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Available Storage:</Text>
-                <Text style={styles.infoValue}>
-                  {HardwareMonitor.formatBytes(systemInfo.availableStorage)}
-                </Text>
+
+              <View style={styles.styledBoxContainer}>
+                <View style={styles.styledBoxLabel}>
+                  <Text style={styles.styledBoxLabelText}>AVAILABLE STORAGE</Text>
+                </View>
+                <View style={styles.styledBox}>
+                  <Text style={styles.styledBoxValue}>
+                    {HardwareMonitor.formatBytes(systemInfo.availableStorage)}
+                  </Text>
+                </View>
               </View>
             </>
           )}
-        </View>
 
-        {/* Memory Usage */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Memory Usage</Text>
+          {/* Memory Usage */}
           {memoryInfo && systemInfo && (
             <>
-              {/* Device RAM */}
-              <View style={styles.memoryOverview}>
-                <Text style={styles.memoryMainText}>
-                  Device: {HardwareMonitor.formatBytes(memoryInfo.usedRAM)} / {HardwareMonitor.formatBytes(systemInfo.totalRAM)}
-                </Text>
-                <Text
-                  style={[
-                    styles.memoryPercent,
-                    memoryInfo.usagePercent > 70
-                      ? styles.warningText
-                      : styles.successText,
-                  ]}>
-                  {memoryInfo.usagePercent.toFixed(1)}%
-                </Text>
-              </View>
-
-              {/* Visual progress bar */}
-              <View style={styles.memoryBar}>
-                <View
-                  style={[
-                    styles.memoryBarFill,
-                    { width: `${memoryInfo.usagePercent}%` },
-                    memoryInfo.usagePercent > 70
-                      ? { backgroundColor: colors.status.warning }
-                      : { backgroundColor: colors.status.success }
-                  ]}
-                />
-              </View>
-
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Free Device RAM:</Text>
-                <Text style={styles.infoValue}>
-                  {HardwareMonitor.formatBytes(memoryInfo.availableRAM)}
-                </Text>
+              <View style={styles.styledBoxContainer}>
+                <View style={styles.styledBoxLabel}>
+                  <Text style={styles.styledBoxLabelText}>FREE DEVICE RAM</Text>
+                </View>
+                <View style={styles.styledBox}>
+                  <Text style={styles.styledBoxValue}>
+                    {HardwareMonitor.formatBytes(memoryInfo.availableRAM)}
+                  </Text>
+                  <Text style={styles.styledBoxSubtext}>
+                    {memoryInfo.usagePercent.toFixed(1)}% used
+                  </Text>
+                </View>
               </View>
 
               {/* App Memory */}
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>App Memory:</Text>
-                <Text style={styles.infoValue}>
-                  {HardwareMonitor.formatBytes(memoryInfo.appMemory)}
-                </Text>
-              </View>
-
-              {/* Model Memory (if loaded) */}
-              {memoryInfo.modelMemory > 0 && (
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Model in Memory:</Text>
-                  <Text style={[styles.infoValue, styles.successText]}>
-                    {HardwareMonitor.formatBytes(memoryInfo.modelMemory)}
-                  </Text>
+              <View style={styles.styledBoxContainer}>
+                <View style={styles.styledBoxLabel}>
+                  <Text style={styles.styledBoxLabelText}>APP MEMORY</Text>
                 </View>
-              )}
+                <View style={styles.styledBox}>
+                  <Text style={styles.styledBoxValue}>
+                    {HardwareMonitor.formatBytes(memoryInfo.appMemory)}
+                  </Text>
+                  {memoryInfo.modelMemory > 0 && (
+                    <Text style={styles.styledBoxSubtext}>
+                      Model: {HardwareMonitor.formatBytes(memoryInfo.modelMemory)}
+                    </Text>
+                  )}
+                </View>
+              </View>
             </>
           )}
-        </View>
-
-        {/* Battery & Provider Mode */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Battery & Provider Mode</Text>
-
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Current Battery:</Text>
-            <Text style={[
-              styles.infoValue,
-              batteryLevel < batteryThreshold ? styles.warningText : styles.successText
-            ]}>
-              {batteryLevel}%
-            </Text>
           </View>
+        </Accordion>
 
-          <View style={styles.batteryConfig}>
-            <Text style={styles.configLabel}>
-              Minimum Battery for Provider Mode: {batteryThreshold}%
-            </Text>
-            <Text style={styles.configHint}>
-              Provider mode will auto-disable below this level
-            </Text>
+        {/* Power & Provider */}
+        <Accordion title="Power & Provider" icon="battery-charging" defaultExpanded={false}>
+          <View style={styles.accordionContent}>
+            <View style={styles.styledBoxContainer}>
+              <View style={styles.styledBoxLabel}>
+                <Text style={styles.styledBoxLabelText}>PROVIDER MODE</Text>
+              </View>
+              <View style={styles.styledBox}>
+                <View style={styles.switchRow}>
+                  <Text style={styles.styledBoxValue}>{providerModeEnabled ? 'ENABLED' : 'DISABLED'}</Text>
+                  <Switch
+                    value={providerModeEnabled}
+                    onValueChange={setProviderModeEnabled}
+                    trackColor={{ false: colors.input.border, true: colors.terminal.green }}
+                    thumbColor={colors.terminal.prompt}
+                    disabled={!modelDownloaded || batteryLevel < batteryThreshold}
+                  />
+                </View>
+              </View>
+            </View>
 
-            {/* Simple threshold buttons */}
-            <View style={styles.thresholdButtons}>
-              {[10, 20, 30, 40, 50].map(value => (
-                <TouchableOpacity
-                  key={value}
-                  style={[
-                    styles.thresholdButton,
-                    batteryThreshold === value && styles.thresholdButtonActive
-                  ]}
-                  onPress={() => handleBatteryThresholdChange(value)}>
-                  <Text style={[
-                    styles.thresholdButtonText,
-                    batteryThreshold === value && styles.thresholdButtonTextActive
-                  ]}>
-                    {value}%
-                  </Text>
-                </TouchableOpacity>
-              ))}
+            <View style={styles.styledBoxContainer}>
+              <View style={styles.styledBoxLabel}>
+                <Text style={styles.styledBoxLabelText}>BATTERY</Text>
+              </View>
+              <View style={styles.styledBox}>
+                <Text style={[
+                  styles.styledBoxValue,
+                  { color: batteryLevel < batteryThreshold ? colors.status.warning : colors.terminal.green }
+                ]}>
+                  {batteryLevel}%
+                </Text>
+                <Text style={styles.styledBoxSubtext}>
+                  Min threshold: {batteryThreshold}%
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.styledBoxContainer}>
+              <View style={styles.styledBoxLabel}>
+                <Text style={styles.styledBoxLabelText}>BATTERY THRESHOLD</Text>
+              </View>
+              <View style={styles.styledBox}>
+                <View style={styles.thresholdButtons}>
+                  {[10, 20, 30, 40, 50].map(value => (
+                    <TouchableOpacity
+                      key={value}
+                      style={[
+                        styles.thresholdButton,
+                        batteryThreshold === value && styles.thresholdButtonActive
+                      ]}
+                      onPress={() => handleBatteryThresholdChange(value)}>
+                      <Text style={[
+                        styles.thresholdButtonText,
+                        batteryThreshold === value && styles.thresholdButtonTextActive
+                      ]}>
+                        {value}%
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
             </View>
           </View>
-        </View>
+        </Accordion>
 
         {/* Model Management */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Model Management</Text>
+        <Accordion title="Model Management" icon="download" defaultExpanded={false}>
+          <View style={styles.accordionContent}>
 
-          {/* Storage Path Info */}
-          <View style={styles.pathInfo}>
-            <Text style={styles.pathLabel}>Storage Location:</Text>
-            <Text style={styles.pathText}>{modelManager.getModelDirectory()}</Text>
+          {/* Storage Path */}
+          <View style={styles.styledBoxContainer}>
+            <View style={styles.styledBoxLabel}>
+              <Text style={styles.styledBoxLabelText}>STORAGE PATH</Text>
+            </View>
+            <View style={styles.styledBox}>
+              <Text style={styles.styledBoxValue} numberOfLines={2}>
+                {modelManager.getModelDirectory()}
+              </Text>
+            </View>
           </View>
 
-          <View style={styles.modelCard}>
-            <Text style={styles.modelName}>{AVAILABLE_MODELS[0].name}</Text>
-            <Text style={styles.modelDesc}>
-              {AVAILABLE_MODELS[0].description}
-            </Text>
+          {/* Model Info Card */}
+          <View style={styles.modelTerminalCard}>
+            <View style={styles.modelHeader}>
+              <View style={styles.terminalPrompt}>
+                <Text style={styles.terminalPromptText}>$</Text>
+              </View>
+              <Text style={styles.modelTerminalName}>{AVAILABLE_MODELS[0].name}</Text>
+            </View>
+
+            <View style={styles.modelMetaRow}>
+              <Text style={styles.modelMetaLabel}>type:</Text>
+              <Text style={styles.modelMetaValue}>quantized</Text>
+            </View>
+
+            <View style={styles.modelMetaRow}>
+              <Text style={styles.modelMetaLabel}>desc:</Text>
+              <Text style={styles.modelMetaValue}>{AVAILABLE_MODELS[0].description}</Text>
+            </View>
+
             {modelSize > 0 && (
-              <Text style={styles.modelSize}>
-                Size: {HardwareMonitor.formatBytes(modelSize)}
-              </Text>
+              <View style={styles.modelMetaRow}>
+                <Text style={styles.modelMetaLabel}>size:</Text>
+                <Text style={styles.modelMetaValue}>{HardwareMonitor.formatBytes(modelSize)}</Text>
+              </View>
             )}
 
+            {/* Download Progress */}
             {modelDownloading && (
-              <View style={styles.progressContainer}>
-                <View style={styles.progressBar}>
+              <View style={styles.terminalProgressContainer}>
+                <View style={styles.terminalProgressBar}>
                   <View
                     style={[
-                      styles.progressFill,
+                      styles.terminalProgressFill,
                       { width: `${modelDownloadProgress}%` },
                     ]}
                   />
                 </View>
-                <Text style={styles.progressText}>
-                  {modelDownloadProgress.toFixed(1)}%
+                <Text style={styles.terminalProgressText}>
+                  [{modelDownloadProgress.toFixed(1)}%] downloading...
                 </Text>
               </View>
             )}
 
+            {/* Status Badge */}
             {modelDownloaded && !modelDownloading && (
-              <View style={styles.downloadedBadge}>
-                <Text style={styles.downloadedText}>✓ Downloaded</Text>
+              <View style={styles.modelStatusRow}>
+                <Text style={styles.modelStatusLabel}>status:</Text>
+                <Text style={styles.modelStatusReady}>● READY</Text>
               </View>
             )}
 
-            <View style={styles.buttonRow}>
+            {/* Action Buttons */}
+            <View style={styles.modelActions}>
               {!modelDownloaded && !modelDownloading && (
                 <TouchableOpacity
-                  style={styles.downloadButton}
+                  style={styles.terminalButton}
                   onPress={handleDownloadModel}>
-                  <Text style={styles.downloadButtonText}>
-                    Download Model
-                  </Text>
+                  <Text style={styles.terminalButtonText}>[ DOWNLOAD ]</Text>
                 </TouchableOpacity>
               )}
 
               {modelDownloaded && !modelDownloading && (
                 <TouchableOpacity
-                  style={styles.deleteButton}
+                  style={styles.terminalButtonDanger}
                   onPress={handleDeleteModel}>
-                  <Text style={styles.deleteButtonText}>Delete Model</Text>
+                  <Text style={styles.terminalButtonDangerText}>[ DELETE ]</Text>
                 </TouchableOpacity>
               )}
             </View>
           </View>
         </View>
-
-        {/* Downloaded Models List */}
-        {downloadedModels.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Downloaded Models</Text>
-            {downloadedModels.map((model) => (
-              <View key={model} style={styles.modelListItem}>
-                <Text style={styles.modelListText}>{model}</Text>
-              </View>
-            ))}
-          </View>
-        )}
+        </Accordion>
       </ScrollView>
     </View>
   );
@@ -444,6 +641,155 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+  },
+  profileInfo: {
+    gap: 12,
+  },
+  accordionContent: {
+    gap: 12,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  statCard: {
+    flex: 1,
+    minWidth: '45%',
+    backgroundColor: colors.background.primary,
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  statIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.background.card,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.text.primary,
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    textAlign: 'center',
+  },
+  // Stats row layout (2 boxes per row)
+  statsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 12,
+  },
+  // Node Statistics - Terminal Style Boxes
+  statBoxContainer: {
+    flex: 1,
+    position: 'relative',
+  },
+  statBoxLabel: {
+    position: 'absolute',
+    top: -8,
+    left: 12,
+    backgroundColor: colors.terminal.background,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: colors.terminal.blueDim,
+    zIndex: 1,
+  },
+  statBoxLabelText: {
+    fontFamily: 'monospace',
+    color: colors.terminal.blue,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+  },
+  statBox: {
+    backgroundColor: colors.terminal.background,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.terminal.blueDim,
+    padding: 12,
+    paddingTop: 16,
+    alignItems: 'center',
+    minHeight: 70,
+    justifyContent: 'center',
+  },
+  statBoxValue: {
+    fontFamily: 'monospace',
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.terminal.blue,
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  statBoxUnit: {
+    fontFamily: 'monospace',
+    fontSize: 10,
+    color: colors.terminal.prompt,
+    letterSpacing: 0.3,
+  },
+  // Styled box layout (terminal aesthetic)
+  styledBoxContainer: {
+    position: 'relative',
+    marginBottom: 16,
+  },
+  styledBoxLabel: {
+    position: 'absolute',
+    top: -8,
+    left: 12,
+    backgroundColor: colors.terminal.background,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: colors.terminal.greenDim,
+    zIndex: 1,
+  },
+  styledBoxLabelText: {
+    fontFamily: 'monospace',
+    color: colors.terminal.green,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+  },
+  styledBox: {
+    backgroundColor: colors.terminal.background,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.terminal.greenDim,
+    padding: 16,
+    paddingTop: 20,
+  },
+  styledBoxValue: {
+    fontFamily: 'monospace',
+    fontSize: 14,
+    color: colors.terminal.green,
+    letterSpacing: 0.3,
+  },
+  styledBoxSubtext: {
+    fontFamily: 'monospace',
+    fontSize: 11,
+    color: colors.terminal.prompt,
+    marginTop: 4,
+    letterSpacing: 0.2,
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   section: {
     padding: 16,
@@ -633,17 +979,17 @@ const styles = StyleSheet.create({
   thresholdButton: {
     flex: 1,
     minWidth: 60,
-    backgroundColor: colors.background.tertiary,
+    backgroundColor: colors.terminal.background,
     borderRadius: 8,
     paddingVertical: 12,
     paddingHorizontal: 16,
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: 'transparent',
+    borderColor: colors.terminal.greenDim,
   },
   thresholdButtonActive: {
-    backgroundColor: colors.accent.primary,
-    borderColor: colors.accent.primary,
+    backgroundColor: colors.terminal.blue,
+    borderColor: colors.terminal.blue,
   },
   thresholdButtonText: {
     color: colors.text.tertiary,
@@ -652,5 +998,137 @@ const styles = StyleSheet.create({
   },
   thresholdButtonTextActive: {
     color: colors.background.primary,
+  },
+  // Model Management - Terminal Style
+  modelTerminalCard: {
+    backgroundColor: colors.terminal.background,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.terminal.greenDim,
+    padding: 16,
+    gap: 8,
+  },
+  modelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.terminal.greenDim,
+  },
+  terminalPrompt: {
+    backgroundColor: colors.terminal.green,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  terminalPromptText: {
+    fontFamily: 'monospace',
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.terminal.background,
+  },
+  modelTerminalName: {
+    fontFamily: 'monospace',
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.terminal.green,
+    letterSpacing: 0.5,
+  },
+  modelMetaRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 2,
+  },
+  modelMetaLabel: {
+    fontFamily: 'monospace',
+    fontSize: 12,
+    color: colors.terminal.prompt,
+    minWidth: 50,
+  },
+  modelMetaValue: {
+    fontFamily: 'monospace',
+    fontSize: 12,
+    color: colors.terminal.green,
+    flex: 1,
+  },
+  modelStatusRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 4,
+    marginTop: 4,
+  },
+  modelStatusLabel: {
+    fontFamily: 'monospace',
+    fontSize: 12,
+    color: colors.terminal.prompt,
+    minWidth: 50,
+  },
+  modelStatusReady: {
+    fontFamily: 'monospace',
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.terminal.green,
+  },
+  terminalProgressContainer: {
+    marginTop: 8,
+    gap: 6,
+  },
+  terminalProgressBar: {
+    height: 6,
+    backgroundColor: colors.background.tertiary,
+    borderRadius: 3,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.terminal.blueDim,
+  },
+  terminalProgressFill: {
+    height: '100%',
+    backgroundColor: colors.terminal.blue,
+  },
+  terminalProgressText: {
+    fontFamily: 'monospace',
+    fontSize: 11,
+    color: colors.terminal.prompt,
+    letterSpacing: 0.5,
+  },
+  modelActions: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.terminal.greenDim,
+  },
+  terminalButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: colors.terminal.green,
+    borderRadius: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  terminalButtonText: {
+    fontFamily: 'monospace',
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.terminal.green,
+    letterSpacing: 1,
+  },
+  terminalButtonDanger: {
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: colors.status.error,
+    borderRadius: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  terminalButtonDangerText: {
+    fontFamily: 'monospace',
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.status.error,
+    letterSpacing: 1,
   },
 });

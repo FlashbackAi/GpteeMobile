@@ -20,7 +20,18 @@ export const colors = {
   accent: {
     primary: '#D4A574',      // Warm tan/beige (kept for contrast)
     secondary: '#C4915C',    // Darker tan
-    tertiary: '#E8D4B8',     // Light cream
+    tertiary: '#E8D4B8', 
+    neutral: '#FFFFFF'    // Light cream
+  },
+
+  // Terminal colors (developer aesthetic)
+  terminal: {
+    green: '#27c93f',        // Bright terminal green
+    blue: '#00d9ff',         // Cyan terminal blue
+    greenDim: 'rgba(39, 201, 63, 0.6)',   // Dim green for borders
+    blueDim: 'rgba(0, 217, 255, 0.6)',    // Dim blue for borders
+    background: '#0d0d0d',   // Terminal black background
+    prompt: '#888888',       // Terminal grey
   },
 
   // Status colors

@@ -146,6 +146,31 @@ export default function App() {
           try {
             relayClient.sendStreamDone(req.from, req.requestId, tokensEmitted, durationMs);
             addLog(`✅ Completed ${tokensEmitted} tokens in ${(durationMs / 1000).toFixed(1)}s`);
+
+            // Update provider statistics
+            const { nodeStats, saveNodeStats } = useAppStore.getState();
+
+            // Calculate tokens per second for this request
+            const tokensPerSecond = durationMs > 0 ? (tokensEmitted / (durationMs / 1000)) : 0;
+
+            // Update peak and lowest t/s
+            const newPeak = Math.max(nodeStats.peakTokensPerSecond, tokensPerSecond);
+            const newLowest = nodeStats.lowestTokensPerSecond === Infinity
+              ? tokensPerSecond
+              : Math.min(nodeStats.lowestTokensPerSecond, tokensPerSecond);
+
+            useAppStore.setState({
+              nodeStats: {
+                ...nodeStats,
+                totalRequestsServed: nodeStats.totalRequestsServed + 1,
+                totalTokensGenerated: nodeStats.totalTokensGenerated + tokensEmitted,
+                totalProviderTimeMs: nodeStats.totalProviderTimeMs + durationMs,
+                peakTokensPerSecond: newPeak,
+                lowestTokensPerSecond: newLowest,
+                lastActivityTime: Date.now(),
+              },
+            });
+            saveNodeStats(); // Persist to AsyncStorage
           } catch (error) {
             addLog(`⚠️ Completed ${tokensEmitted} tokens but WebRTC disconnected`);
           }

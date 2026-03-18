@@ -519,84 +519,72 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
   const renderMessage = ({ item }: { item: ChatMessage }) => {
     const isUser = item.role === 'user';
 
-    // Extract thinking content
-    let thinkingContent = '';
     // Ensure content is always a string
     let displayContent = String(item.content || '');
 
     if (!isUser) {
-      // Check if we're still in thinking phase (has <think> but no </think> yet, or no content after </think>)
-      const hasOpenThink = displayContent.includes('<think>');
-      const hasCloseThink = displayContent.includes('</think>');
+      // Strip <think> tags completely - don't show thinking to users
+      // Handle both complete blocks: "<think>...</think>Response"
+      // And incomplete/unclosed tags: "<think>...Response" (model may not close the tag)
 
-      if (hasOpenThink && hasCloseThink) {
-        // Complete thinking block found
-        const thinkMatch = displayContent.match(/<think>([\s\S]*?)<\/think>/);
-        if (thinkMatch) {
-          thinkingContent = thinkMatch[1].trim();
-        }
+      // First, remove all complete thinking blocks with closing tags
+      displayContent = displayContent.replace(/<think>[\s\S]*?<\/think>\n*/g, '').trim();
 
-        // Remove thinking tags
-        displayContent = displayContent.replace(/<think>[\s\S]*?<\/think>\n*/g, '').trim();
+      // Then, handle unclosed <think> tags - remove everything from <think> onward
+      const thinkStart = displayContent.indexOf('<think>');
+      if (thinkStart !== -1) {
+        // Find where actual response starts after thinking
+        // Look for common patterns: blank line, new paragraph, capitalized sentence
+        const afterThink = displayContent.substring(thinkStart + 7); // Skip '<think>'
 
-        // Only show thinking if there's no actual response yet
-        if (displayContent.length === 0 && item.streaming) {
-          // Still in thinking phase
+        // Try to find where thinking ends and response begins
+        // Look for patterns like "\n\n" (blank line) or "\n#" (markdown header)
+        const responseStart = afterThink.search(/\n\n[A-Z]|^[A-Z]/);
+
+        if (responseStart !== -1) {
+          // Found potential response text after thinking
+          displayContent = afterThink.substring(responseStart).trim();
         } else {
-          // Response has started, clear thinking
-          thinkingContent = '';
+          // No clear response found after <think>, keep text before <think>
+          displayContent = displayContent.substring(0, thinkStart).trim();
         }
-      } else if (hasOpenThink && !hasCloseThink) {
-        // Partial thinking block (still streaming thinking)
-        const partial = displayContent.split('<think>')[1];
-        if (partial) {
-          thinkingContent = partial.trim();
-        }
-        // Remove partial thinking tag
-        displayContent = displayContent.replace(/<think>[\s\S]*/g, '').trim();
-      } else {
-        // No thinking tags, just clean display
-        displayContent = displayContent.trim();
       }
     }
 
-    // Return minimal view if nothing to display
-    if (!displayContent && !thinkingContent) {
-      return null;
+    // Return empty view if nothing to display (NOT null - React Native requires valid elements)
+    if (!displayContent) {
+      return <View key={String(item.id)} />;
+    }
+
+    // Safely build metadata text
+    let metadataText = '';
+    if (!item.streaming && item.tokensGenerated && item.tokensGenerated > 0) {
+      const tokens = item.tokensGenerated || 0;
+      const duration = item.durationMs || 0;
+      const speed = duration > 0 ? (tokens / (duration / 1000)).toFixed(1) : '0';
+      const provider = item.fulfilledBy ? String(item.fulfilledBy) : '';
+
+      metadataText = `${tokens} tokens · ${duration}ms · ${speed} t/s`;
+      if (provider && provider.length > 0) {
+        metadataText += ` · ${provider}`;
+      }
     }
 
     return (
       <View key={String(item.id)}>
-        {/* Show thinking only while streaming and no actual response yet */}
-        {!isUser && thinkingContent && item.streaming && !displayContent && (
-          <View style={styles.thinkingInline}>
-            <View style={styles.thinkingInlineHeader}>
-              <View style={styles.blueDot} />
-              <Text style={styles.thinkingLabel}>THINKING</Text>
-            </View>
-            <Text style={styles.thinkingInlineText} numberOfLines={2} ellipsizeMode="tail">
-              {thinkingContent}
-            </Text>
-          </View>
-        )}
-
-        {/* Regular message bubble */}
-        {displayContent && displayContent.length > 0 ? (
-          <View
-            style={[
-              styles.messageBubble,
-              isUser ? styles.userMessage : styles.assistantMessage,
-            ]}
-          >
-            <Text style={styles.messageText}>{displayContent}</Text>
-            {item.streaming && <ActivityIndicator size="small" color={colors.accent.primary} style={styles.cursor} />}
-            {!item.streaming && item.tokensGenerated && item.tokensGenerated > 0 && (
-              <Text style={styles.metaText}>
-                {`${item.tokensGenerated} tokens · ${item.durationMs || 0}ms · ${item.durationMs ? (item.tokensGenerated / (item.durationMs / 1000)).toFixed(1) : '0'} t/s${item.fulfilledBy && String(item.fulfilledBy).length > 0 ? ` · ${String(item.fulfilledBy)}` : ''}`}
-              </Text>
-            )}
-          </View>
-        ) : null}
+        {/* Message bubble - thinking content is stripped, only show actual response */}
+        <View
+          style={[
+            styles.messageBubble,
+            isUser ? styles.userMessage : styles.assistantMessage,
+          ]}
+        >
+          <Text style={styles.messageText}>{displayContent}</Text>
+          {item.streaming && <ActivityIndicator size="small" color={colors.accent.primary} style={styles.cursor} />}
+          {metadataText.length > 0 && (
+            <Text style={styles.metaText}>{metadataText}</Text>
+          )}
+        </View>
       </View>
     );
   };

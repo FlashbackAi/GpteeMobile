@@ -16,6 +16,26 @@ export interface ChatHistory {
   starred?: boolean;
 }
 
+export interface NodeStatistics {
+  // Provider stats (helping others)
+  totalRequestsServed: number;
+  totalTokensGenerated: number;
+  totalProviderTimeMs: number;
+
+  // Self stats (own usage)
+  totalSelfRequests: number;
+  totalSelfTokensReceived: number;
+  totalSelfTimeMs: number;
+
+  // Performance metrics (tokens per second)
+  peakTokensPerSecond: number;
+  lowestTokensPerSecond: number;
+
+  // Session stats
+  sessionStartTime: number;
+  lastActivityTime: number;
+}
+
 interface AppState {
   // Identity
   peerId: string;
@@ -55,6 +75,9 @@ interface AppState {
   // Chat history
   chatHistory: ChatHistory[];
   currentChatId: string | null;
+
+  // Node statistics
+  nodeStats: NodeStatistics;
 
   // Logs
   logs: string[];
@@ -105,6 +128,8 @@ interface AppState {
   addLog: (msg: string) => void;
   loadLogs: () => Promise<void>;
   clearLogs: () => void;
+  loadNodeStats: () => Promise<void>;
+  saveNodeStats: () => Promise<void>;
   reset: () => void;
 }
 
@@ -136,6 +161,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentChatId: null,
   logs: [],
   localInferenceMode: false,
+  nodeStats: {
+    totalRequestsServed: 0,
+    totalTokensGenerated: 0,
+    totalProviderTimeMs: 0,
+    totalSelfRequests: 0,
+    totalSelfTokensReceived: 0,
+    totalSelfTimeMs: 0,
+    peakTokensPerSecond: 0,
+    lowestTokensPerSecond: Infinity,
+    sessionStartTime: Date.now(),
+    lastActivityTime: Date.now(),
+  },
 
   setPeerId: (id) => set({ peerId: id }),
   setRole: (role) => set({ role }),
@@ -308,7 +345,30 @@ export const useAppStore = create<AppState>((set, get) => ({
             }
           : m,
       );
-      return { messages, isGenerating: false, currentRequestId: null };
+
+      // Update self request statistics
+      const tokensPerSecond = durationMs > 0 ? ((tokensGenerated || 0) / (durationMs / 1000)) : 0;
+
+      // Update peak and lowest t/s for self requests too
+      const newPeak = Math.max(s.nodeStats.peakTokensPerSecond, tokensPerSecond);
+      const newLowest = s.nodeStats.lowestTokensPerSecond === Infinity
+        ? tokensPerSecond
+        : Math.min(s.nodeStats.lowestTokensPerSecond, tokensPerSecond);
+
+      const updatedStats = {
+        ...s.nodeStats,
+        totalSelfRequests: s.nodeStats.totalSelfRequests + 1,
+        totalSelfTokensReceived: s.nodeStats.totalSelfTokensReceived + (tokensGenerated || 0),
+        totalSelfTimeMs: s.nodeStats.totalSelfTimeMs + (durationMs || 0),
+        peakTokensPerSecond: newPeak,
+        lowestTokensPerSecond: newLowest,
+        lastActivityTime: Date.now(),
+      };
+
+      // Save stats asynchronously
+      setTimeout(() => get().saveNodeStats(), 0);
+
+      return { messages, isGenerating: false, currentRequestId: null, nodeStats: updatedStats };
     }),
 
   setGenerating: (v) => set({ isGenerating: v }),
@@ -479,6 +539,29 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ logs: [] });
     } catch (e) {
       console.error('[AppStore] Failed to clear logs:', e);
+    }
+  },
+
+  // Load node statistics
+  loadNodeStats: async () => {
+    try {
+      const statsJson = await AsyncStorage.getItem('nodeStats');
+      if (statsJson) {
+        const stats = JSON.parse(statsJson);
+        set({ nodeStats: { ...stats, sessionStartTime: Date.now() } });
+      }
+    } catch (e) {
+      console.error('[AppStore] Failed to load node stats:', e);
+    }
+  },
+
+  // Save node statistics
+  saveNodeStats: async () => {
+    try {
+      const { nodeStats } = get();
+      await AsyncStorage.setItem('nodeStats', JSON.stringify(nodeStats));
+    } catch (e) {
+      console.error('[AppStore] Failed to save node stats:', e);
     }
   },
 

@@ -176,7 +176,7 @@ class LlamaEngine {
   private formatPrompt(userMessage: string): string {
     return (
       `<|im_start|>system\n` +
-      `You are GPTee, a helpful AI assistant running privately on this device.\n` +
+      `You are a helpful AI assistant. Answer directly and concisely without showing your thought process.\n` +
       `<|im_end|>\n` +
       `<|im_start|>user\n` +
       `${userMessage}\n` +
