@@ -108,7 +108,7 @@ export const Sidebar: React.FC<Props> = ({
                 <Icon name="home" size={20} color={colors.text.primary} />
               </TouchableOpacity>
             </View>
-            <Text style={styles.tagline}>GPT for Everyone, Free</Text>
+            <Text style={styles.tagline}>GPT for Everyone, Free.</Text>
           </View>
 
           {/* Chat History */}

@@ -9,6 +9,7 @@ import {
   ScrollView,
   Platform,
 } from 'react-native';
+import Icon from 'react-native-vector-icons/Feather';
 import { colors } from '../theme/colors';
 import { generateGameName } from '../utils/nameGenerator';
 import { UserProfile } from '../store/appStore';
@@ -24,6 +25,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
   const [day, setDay] = useState('');
   const [month, setMonth] = useState('');
   const [year, setYear] = useState('');
+  const [ageAgreementChecked, setAgeAgreementChecked] = useState(false);
 
   useEffect(() => {
     // Generate initial name
@@ -39,8 +41,8 @@ export default function OnboardingScreen({ onComplete }: Props) {
   };
 
   const handleContinue = () => {
-    if (!displayName) {
-      return; // Name is required
+    if (!displayName || !ageAgreementChecked) {
+      return; // Name and age agreement are required
     }
 
     // Format date (YYYY-MM-DD), use placeholders if not provided
@@ -65,7 +67,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
     return d >= 1 && d <= 31 && m >= 1 && m <= 12 && y >= 1900 && y <= 2025;
   };
 
-  const canContinue = displayName.trim().length > 0 && (day === '' || isValidDate());
+  const canContinue = displayName.trim().length > 0 && (day === '' || isValidDate()) && ageAgreementChecked;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -73,7 +75,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
         <View style={styles.content}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.logo}>GPTee</Text>
+            <Text style={styles.logo}>gptee.org</Text>
             <Text style={styles.tagline}>Let's get you set up</Text>
           </View>
 
@@ -109,7 +111,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
           </View>
 
           {/* Gender */}
-          <View style={styles.section}>
+          {/* <View style={styles.section}>
             <Text style={styles.sectionTitle}>Gender (Optional)</Text>
             <Text style={styles.sectionSubtitle}>
               Helps personalize your AI experience
@@ -128,10 +130,10 @@ export default function OnboardingScreen({ onComplete }: Props) {
                 </TouchableOpacity>
               ))}
             </View>
-          </View>
+          </View> */}
 
           {/* Date of Birth */}
-          <View style={styles.section}>
+          {/* <View style={styles.section}>
             <Text style={styles.sectionTitle}>Date of Birth (Optional)</Text>
             <Text style={styles.sectionSubtitle}>
               For age-appropriate and personalized responses
@@ -171,14 +173,30 @@ export default function OnboardingScreen({ onComplete }: Props) {
             {!isValidDate() && (
               <Text style={styles.errorText}>Please enter a valid date</Text>
             )}
-          </View>
+          </View> */}
 
           {/* Privacy Note */}
-          <View style={styles.privacyNote}>
+          {/* <View style={styles.privacyNote}>
             <Text style={styles.privacyText}>
               🔒 All data stays on your device. Nothing is sent to external servers.
             </Text>
-          </View>
+          </View> */}
+
+          {/* Age Agreement Checkbox */}
+          <TouchableOpacity
+            style={styles.checkboxContainer}
+            onPress={() => setAgeAgreementChecked(!ageAgreementChecked)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.checkbox, ageAgreementChecked && styles.checkboxChecked]}>
+              {ageAgreementChecked && (
+                <Icon name="check" size={16} color={colors.button.primaryText} />
+              )}
+            </View>
+            <Text style={styles.checkboxText}>
+              I confirm that I am 18 years or older and agree to use this application
+            </Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
 
@@ -368,6 +386,34 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     textAlign: 'center',
     lineHeight: 18,
+  },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 20,
+    paddingHorizontal: 4,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: colors.border,
+    backgroundColor: colors.background.card,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+    marginTop: 2,
+  },
+  checkboxChecked: {
+    backgroundColor: colors.button.primary,
+    borderColor: colors.button.primary,
+  },
+  checkboxText: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.text.secondary,
+    lineHeight: 20,
   },
   footer: {
     padding: 24,
