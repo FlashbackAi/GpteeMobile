@@ -76,24 +76,24 @@ export default function OnboardingScreen({ onComplete }: Props) {
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.logo}>gptee.org</Text>
-            <Text style={styles.tagline}>Let's get you set up</Text>
+            <Text style={styles.tagline}>let's get you set up</Text>
           </View>
 
           {/* Name Generation */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Choose Your Display Name</Text>
+            <Text style={styles.sectionTitle}>choose your display name</Text>
             <Text style={styles.sectionSubtitle}>
-              This is how others will see you in the network
+              this is how others will see you in the network
             </Text>
 
             <View style={styles.generatorCard}>
               <Text style={styles.generatedName}>{generatedName}</Text>
               <View style={styles.generatorButtons}>
                 <TouchableOpacity style={styles.regenerateButton} onPress={regenerateName}>
-                  <Text style={styles.regenerateButtonText}>🎲 Generate New</Text>
+                  <Text style={styles.regenerateButtonText}>🎲 generate new</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.useButton} onPress={useName}>
-                  <Text style={styles.useButtonText}>Use This</Text>
+                  <Text style={styles.useButtonText}>use this</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -104,7 +104,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
               style={styles.input}
               value={displayName}
               onChangeText={setDisplayName}
-              placeholder="Enter display name"
+              placeholder="enter display name"
               placeholderTextColor={colors.input.placeholder}
               maxLength={20}
             />
@@ -171,7 +171,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
               />
             </View>
             {!isValidDate() && (
-              <Text style={styles.errorText}>Please enter a valid date</Text>
+              <Text style={styles.errorText}>please enter a valid date</Text>
             )}
           </View> */}
 
@@ -194,7 +194,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
               )}
             </View>
             <Text style={styles.checkboxText}>
-              I confirm that I am 18 years or older and agree to use this application
+              i confirm that i am 18 years or older and agree to use this application
             </Text>
           </TouchableOpacity>
         </View>
@@ -207,7 +207,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
           onPress={handleContinue}
           disabled={!canContinue}
         >
-          <Text style={styles.continueButtonText}>Continue</Text>
+          <Text style={styles.continueButtonText}>continue</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -257,11 +257,11 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   generatorCard: {
-    backgroundColor: colors.background.card,
+    backgroundColor: colors.terminal.background,
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.terminal.greenDim,
     marginBottom: 12,
   },
   generatedName: {
@@ -277,11 +277,11 @@ const styles = StyleSheet.create({
   },
   regenerateButton: {
     flex: 1,
-    backgroundColor: colors.background.secondary,
+    backgroundColor: 'transparent',
     paddingVertical: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.terminal.blueDim,
   },
   regenerateButtonText: {
     fontSize: 14,
@@ -315,7 +315,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.text.primary,
     borderWidth: 1,
-    borderColor: colors.input.border,
+    borderColor: colors.terminal.greenDim,
   },
   genderOptions: {
     gap: 8,
@@ -398,8 +398,8 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: colors.border,
-    backgroundColor: colors.background.card,
+    borderColor: colors.terminal.greenDim,
+    backgroundColor: colors.terminal.background,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,

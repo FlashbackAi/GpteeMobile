@@ -36,8 +36,8 @@ export const LogsPopup: React.FC<Props> = ({
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerLeft}>
-              <Icon name="terminal" size={24} color="#4CAF50" />
-              <Text style={styles.title}>Activity Logs</Text>
+              <Icon name="terminal" size={24} color={colors.terminal.green} />
+              <Text style={styles.title}>activity logs</Text>
             </View>
             <View style={styles.headerRight}>
               <TouchableOpacity onPress={onClearLogs} style={styles.clearButton}>
@@ -51,22 +51,13 @@ export const LogsPopup: React.FC<Props> = ({
 
           {/* Terminal Window */}
           <View style={styles.terminal}>
-            <View style={styles.terminalHeader}>
-              <View style={styles.terminalControls}>
-                <View style={[styles.terminalButton, styles.closeBtn]} />
-                <View style={[styles.terminalButton, styles.minimizeBtn]} />
-                <View style={[styles.terminalButton, styles.maximizeBtn]} />
-              </View>
-              <Text style={styles.terminalTitle}>bash</Text>
-            </View>
-
             <ScrollView style={styles.terminalBody}>
               {logs.length === 0 ? (
                 <View style={styles.emptyState}>
-                  <Icon name="inbox" size={48} color="#444" />
-                  <Text style={styles.emptyText}>No logs yet</Text>
+                  <Icon name="inbox" size={48} color={colors.text.disabled} />
+                  <Text style={styles.emptyText}>no logs yet</Text>
                   <Text style={styles.emptySubtext}>
-                    Activity logs will appear here as you use the app
+                    activity logs will appear here as you use the app
                   </Text>
                 </View>
               ) : (
@@ -110,7 +101,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomColor: colors.terminal.greenDim,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -138,47 +129,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E1E1E',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#333',
+    borderColor: colors.terminal.greenDim,
     overflow: 'hidden',
     maxHeight: '80%',
-  },
-  terminalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: '#2D2D2D',
-    borderBottomWidth: 1,
-    borderBottomColor: '#333',
-  },
-  terminalControls: {
-    flexDirection: 'row',
-    gap: 8,
-    marginRight: 12,
-  },
-  terminalButton: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  closeBtn: {
-    backgroundColor: '#FF5F56',
-  },
-  minimizeBtn: {
-    backgroundColor: '#FFBD2E',
-  },
-  maximizeBtn: {
-    backgroundColor: '#27C93F',
-  },
-  terminalTitle: {
-    fontSize: 11,
-    color: '#888',
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   terminalBody: {
     paddingHorizontal: 12,
     paddingVertical: 12,
     maxHeight: 500,
+    backgroundColor: '#000000',
   },
   emptyState: {
     alignItems: 'center',
@@ -189,13 +148,13 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#666',
+    color: colors.text.tertiary,
     marginTop: 16,
     marginBottom: 8,
   },
   emptySubtext: {
     fontSize: 13,
-    color: '#444',
+    color: colors.text.disabled,
     textAlign: 'center',
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
@@ -206,21 +165,21 @@ const styles = StyleSheet.create({
   },
   logPrompt: {
     fontSize: 11,
-    color: '#4CAF50',
+    color: colors.terminal.green,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     marginRight: 8,
     fontWeight: '700',
   },
   logText: {
     fontSize: 11,
-    color: '#E0E0E0',
+    color: colors.text.primary,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     flex: 1,
   },
   terminalCursor: {
     width: 8,
     height: 14,
-    backgroundColor: '#4CAF50',
+    backgroundColor: colors.terminal.green,
     marginLeft: 2,
   },
 });

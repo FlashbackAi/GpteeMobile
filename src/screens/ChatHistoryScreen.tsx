@@ -153,9 +153,9 @@ export default function ChatHistoryScreen({ onBack, onSelectChat, currentMessage
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backButtonText}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Chat History</Text>
+        <Text style={styles.headerTitle}>chat history</Text>
         <TouchableOpacity onPress={saveCurrentChat} style={styles.saveButton}>
-          <Text style={styles.saveButtonText}>Save</Text>
+          <Text style={styles.saveButtonText}>save</Text>
         </TouchableOpacity>
       </View>
 
@@ -163,20 +163,20 @@ export default function ChatHistoryScreen({ onBack, onSelectChat, currentMessage
         <View style={styles.actionsBar}>
           <Text style={styles.countText}>{sessions.length} saved chat{sessions.length !== 1 ? 's' : ''}</Text>
           <TouchableOpacity onPress={clearAllChats}>
-            <Text style={styles.clearAllText}>Clear All</Text>
+            <Text style={styles.clearAllText}>clear all</Text>
           </TouchableOpacity>
         </View>
       )}
 
       {loading ? (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>Loading...</Text>
+          <Text style={styles.emptyText}>loading...</Text>
         </View>
       ) : sessions.length === 0 ? (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>No saved chats yet</Text>
+          <Text style={styles.emptyText}>no saved chats yet</Text>
           <Text style={styles.emptySubtext}>
-            Tap "Save" to save your current chat
+            tap "save" to save your current chat
           </Text>
         </View>
       ) : (

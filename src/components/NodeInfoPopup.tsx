@@ -105,14 +105,9 @@ export const NodeInfoPopup: React.FC<Props> = ({
           <View style={styles.terminal}>
             {/* Terminal Header */}
             <View style={styles.terminalHeader}>
-              <View style={styles.terminalButtons}>
-                <View style={[styles.terminalButton, styles.terminalButtonRed]} />
-                <View style={[styles.terminalButton, styles.terminalButtonYellow]} />
-                <View style={[styles.terminalButton, styles.terminalButtonGreen]} />
-              </View>
               <Text style={styles.terminalTitle}>provider-nodes</Text>
               <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                <Icon name="x" size={18} color="#888" />
+                <Icon name="x" size={18} color={colors.text.tertiary} />
               </TouchableOpacity>
             </View>
 
@@ -120,8 +115,8 @@ export const NodeInfoPopup: React.FC<Props> = ({
             <View style={styles.terminalBody}>
               {/* Column Headers */}
               <View style={styles.tableHeader}>
-                <Text style={[styles.tableHeaderText, { flex: 1 }]}>Node</Text>
-                <Text style={[styles.tableHeaderText, { width: 80, textAlign: 'right' }]}>Ping</Text>
+                <Text style={[styles.tableHeaderText, { flex: 1 }]}>node</Text>
+                <Text style={[styles.tableHeaderText, { width: 80, textAlign: 'right' }]}>ping</Text>
               </View>
 
               {/* Scrollable Provider List */}
@@ -130,8 +125,8 @@ export const NodeInfoPopup: React.FC<Props> = ({
                 {/* Provider Rows */}
                 {providers.length === 0 ? (
                   <View style={styles.emptyState}>
-                    <Text style={styles.emptyText}>No providers online</Text>
-                    <Text style={styles.emptySubtext}>Waiting for nodes to connect...</Text>
+                    <Text style={styles.emptyText}>no providers online</Text>
+                    <Text style={styles.emptySubtext}>waiting for nodes to connect...</Text>
                   </View>
                 ) : (
                   providers.map((provider) => {
@@ -142,7 +137,7 @@ export const NodeInfoPopup: React.FC<Props> = ({
                       <View key={provider.peerId} style={styles.rowContainer}>
                         {isOwnNode && (
                           <View style={styles.ownNodeBadge}>
-                            <Text style={styles.ownNodeBadgeText}>THIS NODE</Text>
+                            <Text style={styles.ownNodeBadgeText}>this node</Text>
                           </View>
                         )}
                         <TouchableOpacity
@@ -190,7 +185,7 @@ export const NodeInfoPopup: React.FC<Props> = ({
               {/* Footer info */}
               <View style={styles.footer}>
                 <Text style={styles.footerText}>
-                  {providers.length > 0 ? '• Tap to select provider' : '• Enable provider mode to appear in list'}
+                  {providers.length > 0 ? '• tap to select provider' : '• enable provider mode to appear in list'}
                 </Text>
               </View>
             </View>
@@ -215,11 +210,11 @@ const styles = StyleSheet.create({
     maxWidth: 900,
     minWidth: 320,
     maxHeight: '85%',
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#000000',
     borderRadius: 12,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#333',
+    borderWidth: 2,
+    borderColor: colors.terminal.greenDim,
   },
   terminalHeader: {
     flexDirection: 'row',
@@ -227,45 +222,27 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 14,
-    backgroundColor: '#2a2a2a',
+    backgroundColor: '#000000',
     borderBottomWidth: 1,
-    borderBottomColor: '#333',
-  },
-  terminalButtons: {
-    flexDirection: 'row',
-    gap: 6,
-    flex: 1,
-  },
-  terminalButton: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  terminalButtonRed: {
-    backgroundColor: '#ff5f56',
-  },
-  terminalButtonYellow: {
-    backgroundColor: '#ffbd2e',
-  },
-  terminalButtonGreen: {
-    backgroundColor: '#27c93f',
+    borderBottomColor: colors.terminal.greenDim,
   },
   terminalTitle: {
     fontSize: 12,
-    color: '#888',
+    color: colors.terminal.green,
     fontFamily: 'monospace',
-    flex: 2,
+    flex: 1,
     textAlign: 'center',
+    fontWeight: '600',
   },
   closeButton: {
     padding: 4,
-    flex: 1,
     alignItems: 'flex-end',
   },
   terminalBody: {
     paddingHorizontal: 24,
     paddingTop: 20,
     paddingBottom: 12,
+    backgroundColor: '#000000',
   },
   scrollView: {
     maxHeight: 450,
@@ -275,7 +252,7 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
     paddingHorizontal: 4,
     borderBottomWidth: 1,
-    borderBottomColor: '#333',
+    borderBottomColor: colors.terminal.greenDim,
     marginBottom: 8,
   },
   tableHeaderText: {
@@ -283,7 +260,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#888',
     fontWeight: '700',
-    textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   rowContainer: {
@@ -336,12 +312,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -6,
     left: 12,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#000000',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: 'rgba(39, 201, 63, 0.6)',
+    borderColor: colors.terminal.green,
     zIndex: 1,
   },
   ownNodeBadgeText: {
@@ -390,7 +366,7 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingHorizontal: 4,
     borderTopWidth: 1,
-    borderTopColor: '#333',
+    borderTopColor: colors.terminal.greenDim,
   },
   footerText: {
     fontFamily: 'monospace',

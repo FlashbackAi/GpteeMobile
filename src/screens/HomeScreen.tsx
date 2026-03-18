@@ -58,8 +58,8 @@ export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
         if (batteryPercent < batteryThreshold) {
           Toast.show({
             type: 'error',
-            text1: 'Battery Too Low',
-            text2: `Please charge above ${batteryThreshold}% to enable provider mode`,
+            text1: 'battery too low',
+            text2: `please charge above ${batteryThreshold}% to enable provider mode`,
             position: 'top',
             visibilityTime: 4000,
           });
@@ -96,18 +96,18 @@ export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
                 <Icon name="menu" size={24} color={colors.text.primary} />
               </TouchableOpacity>
               {/* <View>
-                <Text style={styles.logo}>GPTee</Text>
-                <Text style={styles.tagline}>GPT for Everyone, Free</Text>
+                <Text style={styles.logo}>gptee</Text>
+                <Text style={styles.tagline}>gpt for everyone, free</Text>
               </View> */}
             </View>
             <View style={styles.headerButtons}>
               <TouchableOpacity onPress={() => setShowNodeInfo(true)} style={styles.nodeChip}>
                 <View style={[styles.nodeDot, (connected && providerModeEnabled) ? styles.dotGreen : styles.dotRed]} />
-                <Text style={styles.nodeChipText}>Node</Text>
+                <Text style={styles.nodeChipText}>node</Text>
                 <Icon name="terminal" size={14} color={colors.text.primary} />
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setShowLogs(true)} style={styles.logsChip}>
-                <Text style={styles.logsChipText}>Logs</Text>
+                <Text style={styles.logsChipText}>logs</Text>
                 <Icon name="file-text" size={14} color={colors.text.primary} />
               </TouchableOpacity>
               <TouchableOpacity onPress={onOpenProfile} style={styles.profileButton}>
@@ -157,17 +157,17 @@ export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
         {/* Main content */}
         <View style={styles.content}>
           <Text style={styles.description}>
-            Peer-to-peer AI inference network.{'\n\n'}
-            Chat using your local model or connect to online providers.
+            peer-to-peer ai inference network.{'\n\n'}
+            chat using your local model or connect to online providers.
           </Text>
 
           {/* Provider Mode Toggle */}
           <View style={styles.providerSection}>
             <View style={styles.providerHeader}>
               <View style={styles.providerInfo}>
-                <Text style={styles.providerTitle}>Provider Mode</Text>
+                <Text style={styles.providerTitle}>provider mode</Text>
                 <Text style={styles.providerDesc}>
-                  Share your device's AI model with the network
+                  share your device's ai model with the network
                 </Text>
               </View>
               <Switch
@@ -181,7 +181,7 @@ export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
             {providerModeEnabled && (
               <View style={styles.providerActiveInfo}>
                 <Text style={styles.providerActiveText}>
-                  ✓ Provider mode active - your device is now visible to the network
+                  ✓ provider mode active - your device is now visible to the network
                 </Text>
               </View>
             )}
@@ -195,11 +195,11 @@ export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
             onPress={onSelectRole}
             activeOpacity={0.85}
           >
-            <Text style={styles.startButtonText}>Start Chat</Text>
+            <Text style={styles.startButtonText}>start chat</Text>
           </TouchableOpacity>
 
           <Text style={styles.footer}>
-            All inference is private · End-to-end encrypted
+            all inference is private · end-to-end encrypted
           </Text>
         </View>
       </View>
@@ -220,6 +220,7 @@ export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
           onSelectRole();
         }}
         currentChatId={currentChatId || undefined}
+        onNewChat={onSelectRole}
       />
     </SafeAreaView>
   );
@@ -262,9 +263,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
-    backgroundColor: colors.background.card,
+    backgroundColor: colors.terminal.background,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.terminal.greenDim,
   },
   nodeChipText: {
     fontSize: 12,
@@ -283,9 +284,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
-    backgroundColor: colors.background.card,
+    backgroundColor: colors.terminal.background,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.terminal.blueDim,
   },
   logsChipText: {
     fontSize: 12,
@@ -295,9 +296,9 @@ const styles = StyleSheet.create({
   profileButton: {
     padding: 8,
     borderRadius: 8,
-    backgroundColor: colors.background.card,
+    backgroundColor: colors.terminal.background,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.terminal.greenDim,
   },
   profileIcon: {
     fontSize: 20,
@@ -382,12 +383,12 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   providerSection: {
-    backgroundColor: colors.background.card,
+    backgroundColor: colors.terminal.background,
     borderRadius: 12,
     padding: 16,
     marginTop: 32,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.terminal.greenDim,
   },
   providerHeader: {
     flexDirection: 'row',
@@ -413,7 +414,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: colors.terminal.greenDim,
   },
   providerActiveText: {
     fontSize: 12,

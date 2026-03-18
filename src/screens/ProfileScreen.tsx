@@ -120,7 +120,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
     // Check if already downloaded
     if (modelDownloaded) {
-      Alert.alert('Already Downloaded', 'Model is already on your device.');
+      Alert.alert('already downloaded', 'model is already on your device.');
       return;
     }
 
@@ -129,8 +129,8 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const requiredSpace = 1000000000; // 1GB minimum
     if (freeSpace < requiredSpace) {
       Alert.alert(
-        'Insufficient Storage',
-        `Need at least ${HardwareMonitor.formatBytes(requiredSpace)} free, but only ${HardwareMonitor.formatBytes(freeSpace)} available.`,
+        'insufficient storage',
+        `need at least ${HardwareMonitor.formatBytes(requiredSpace)} free, but only ${HardwareMonitor.formatBytes(freeSpace)} available.`,
       );
       return;
     }
@@ -149,10 +149,10 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       setModelPath(path);
       await loadDownloadedModels();
 
-      Alert.alert('Success', 'Model downloaded successfully!');
+      Alert.alert('success', 'model downloaded successfully!');
     } catch (error: any) {
       setModelDownloading(false);
-      Alert.alert('Download Failed', error.message || 'Unknown error');
+      Alert.alert('download failed', error.message || 'unknown error');
     }
   };
 
@@ -181,12 +181,12 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       : '';
 
     Alert.alert(
-      'Delete Model?',
-      `This will delete ${model.name} ${sizeText}.`,
+      'delete model?',
+      `this will delete ${model.name} ${sizeText}.`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'cancel', style: 'cancel' },
         {
-          text: 'Delete',
+          text: 'delete',
           style: 'destructive',
           onPress: async () => {
             try {
@@ -195,9 +195,9 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               setModelFilename(null);
               setModelPath(null);
               await loadDownloadedModels();
-              Alert.alert('Deleted', 'Model removed successfully.');
+              Alert.alert('deleted', 'model removed successfully.');
             } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to delete model');
+              Alert.alert('error', error.message || 'failed to delete model');
             }
           },
         },
@@ -210,27 +210,26 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Icon name="arrow-left" size={20} color={colors.accent.primary} />
-          <Text style={styles.backText}>Back</Text>
+          <Text style={styles.backText}>back</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Profile</Text>
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         {/* Profile Section */}
-        <Accordion title="Profile" icon="user" defaultExpanded={true}>
+        <Accordion title="profile" icon="user" defaultExpanded={true}>
           <View style={styles.accordionContent}>
             <View style={styles.styledBoxContainer}>
               <View style={styles.styledBoxLabel}>
-                <Text style={styles.styledBoxLabelText}>DISPLAY NAME</Text>
+                <Text style={styles.styledBoxLabelText}>display name</Text>
               </View>
               <View style={styles.styledBox}>
-                <Text style={styles.styledBoxValue}>{userProfile?.displayName || 'Not set'}</Text>
+                <Text style={styles.styledBoxValue}>{userProfile?.displayName || 'not set'}</Text>
               </View>
             </View>
 
             <View style={styles.styledBoxContainer}>
               <View style={styles.styledBoxLabel}>
-                <Text style={styles.styledBoxLabelText}>PEER ID</Text>
+                <Text style={styles.styledBoxLabelText}>peer id</Text>
               </View>
               <View style={styles.styledBox}>
                 <Text style={styles.styledBoxValue}>{peerId}</Text>
@@ -239,14 +238,14 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </View>
         </Accordion>
 
-        {/* Node Statistics */}
-        <Accordion title="Node Statistics" icon="bar-chart-2" defaultExpanded={false}>
+        {/* node statistics */}
+        <Accordion title="node statistics" icon="bar-chart-2" defaultExpanded={false}>
           <View style={styles.accordionContent}>
             {/* Row 1: Requests & Tokens */}
             <View style={styles.statsRow}>
               <View style={styles.statBoxContainer}>
                 <View style={styles.statBoxLabel}>
-                  <Text style={styles.statBoxLabelText}>SERVED</Text>
+                  <Text style={styles.statBoxLabelText}>served</Text>
                 </View>
                 <View style={styles.statBox}>
                   <Text style={styles.statBoxValue}>{formatNumber(nodeStats.totalRequestsServed)}</Text>
@@ -256,7 +255,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
               <View style={styles.statBoxContainer}>
                 <View style={styles.statBoxLabel}>
-                  <Text style={styles.statBoxLabelText}>TOKENS</Text>
+                  <Text style={styles.statBoxLabelText}>tokens</Text>
                 </View>
                 <View style={styles.statBox}>
                   <Text style={styles.statBoxValue}>{formatNumber(nodeStats.totalTokensGenerated)}</Text>
@@ -269,7 +268,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <View style={styles.statsRow}>
               <View style={styles.statBoxContainer}>
                 <View style={styles.statBoxLabel}>
-                  <Text style={styles.statBoxLabelText}>SELF</Text>
+                  <Text style={styles.statBoxLabelText}>self</Text>
                 </View>
                 <View style={styles.statBox}>
                   <Text style={styles.statBoxValue}>{formatNumber(nodeStats.totalSelfRequests)}</Text>
@@ -279,7 +278,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
               <View style={styles.statBoxContainer}>
                 <View style={styles.statBoxLabel}>
-                  <Text style={styles.statBoxLabelText}>UPTIME</Text>
+                  <Text style={styles.statBoxLabelText}>uptime</Text>
                 </View>
                 <View style={styles.statBox}>
                   <Text style={styles.statBoxValue}>{formatUptime(nodeStats.sessionStartTime)}</Text>
@@ -292,7 +291,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <View style={styles.statsRow}>
               <View style={styles.statBoxContainer}>
                 <View style={styles.statBoxLabel}>
-                  <Text style={styles.statBoxLabelText}>PEAK T/S</Text>
+                  <Text style={styles.statBoxLabelText}>peak t/s</Text>
                 </View>
                 <View style={styles.statBox}>
                   <Text style={styles.statBoxValue}>
@@ -304,7 +303,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
               <View style={styles.statBoxContainer}>
                 <View style={styles.statBoxLabel}>
-                  <Text style={styles.statBoxLabelText}>AVG T/S</Text>
+                  <Text style={styles.statBoxLabelText}>avg t/s</Text>
                 </View>
                 <View style={styles.statBox}>
                   <Text style={styles.statBoxValue}>
@@ -324,7 +323,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <View style={styles.statsRow}>
               <View style={styles.statBoxContainer}>
                 <View style={styles.statBoxLabel}>
-                  <Text style={styles.statBoxLabelText}>LOW T/S</Text>
+                  <Text style={styles.statBoxLabelText}>low t/s</Text>
                 </View>
                 <View style={styles.statBox}>
                   <Text style={styles.statBoxValue}>
@@ -338,7 +337,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
               <View style={styles.statBoxContainer}>
                 <View style={styles.statBoxLabel}>
-                  <Text style={styles.statBoxLabelText}>AVG TIME</Text>
+                  <Text style={styles.statBoxLabelText}>avg time</Text>
                 </View>
                 <View style={styles.statBox}>
                   <Text style={styles.statBoxValue}>
@@ -357,13 +356,13 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </Accordion>
 
         {/* Device Information */}
-        <Accordion title="Device Information" icon="smartphone" defaultExpanded={false}>
+        <Accordion title="device information" icon="smartphone" defaultExpanded={false}>
           <View style={styles.accordionContent}>
           {systemInfo && (
             <>
               <View style={styles.styledBoxContainer}>
                 <View style={styles.styledBoxLabel}>
-                  <Text style={styles.styledBoxLabelText}>DEVICE</Text>
+                  <Text style={styles.styledBoxLabelText}>device</Text>
                 </View>
                 <View style={styles.styledBox}>
                   <Text style={styles.styledBoxValue}>{systemInfo.deviceModel}</Text>
@@ -372,7 +371,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
               <View style={styles.styledBoxContainer}>
                 <View style={styles.styledBoxLabel}>
-                  <Text style={styles.styledBoxLabelText}>OS VERSION</Text>
+                  <Text style={styles.styledBoxLabelText}>os version</Text>
                 </View>
                 <View style={styles.styledBox}>
                   <Text style={styles.styledBoxValue}>{systemInfo.osVersion}</Text>
@@ -381,7 +380,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
               <View style={styles.styledBoxContainer}>
                 <View style={styles.styledBoxLabel}>
-                  <Text style={styles.styledBoxLabelText}>CPU ARCHITECTURE</Text>
+                  <Text style={styles.styledBoxLabelText}>cpu architecture</Text>
                 </View>
                 <View style={styles.styledBox}>
                   <Text style={styles.styledBoxValue}>{systemInfo.cpuArch}</Text>
@@ -390,7 +389,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
               <View style={styles.styledBoxContainer}>
                 <View style={styles.styledBoxLabel}>
-                  <Text style={styles.styledBoxLabelText}>TOTAL RAM</Text>
+                  <Text style={styles.styledBoxLabelText}>total ram</Text>
                 </View>
                 <View style={styles.styledBox}>
                   <Text style={styles.styledBoxValue}>
@@ -401,7 +400,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
               <View style={styles.styledBoxContainer}>
                 <View style={styles.styledBoxLabel}>
-                  <Text style={styles.styledBoxLabelText}>AVAILABLE STORAGE</Text>
+                  <Text style={styles.styledBoxLabelText}>available storage</Text>
                 </View>
                 <View style={styles.styledBox}>
                   <Text style={styles.styledBoxValue}>
@@ -417,7 +416,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <>
               <View style={styles.styledBoxContainer}>
                 <View style={styles.styledBoxLabel}>
-                  <Text style={styles.styledBoxLabelText}>FREE DEVICE RAM</Text>
+                  <Text style={styles.styledBoxLabelText}>free device ram</Text>
                 </View>
                 <View style={styles.styledBox}>
                   <Text style={styles.styledBoxValue}>
@@ -432,7 +431,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               {/* App Memory */}
               <View style={styles.styledBoxContainer}>
                 <View style={styles.styledBoxLabel}>
-                  <Text style={styles.styledBoxLabelText}>APP MEMORY</Text>
+                  <Text style={styles.styledBoxLabelText}>app memory</Text>
                 </View>
                 <View style={styles.styledBox}>
                   <Text style={styles.styledBoxValue}>
@@ -440,7 +439,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   </Text>
                   {memoryInfo.modelMemory > 0 && (
                     <Text style={styles.styledBoxSubtext}>
-                      Model: {HardwareMonitor.formatBytes(memoryInfo.modelMemory)}
+                      model: {HardwareMonitor.formatBytes(memoryInfo.modelMemory)}
                     </Text>
                   )}
                 </View>
@@ -451,15 +450,15 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </Accordion>
 
         {/* Power & Provider */}
-        <Accordion title="Power & Provider" icon="battery-charging" defaultExpanded={false}>
+        <Accordion title="power & provider" icon="battery-charging" defaultExpanded={false}>
           <View style={styles.accordionContent}>
             <View style={styles.styledBoxContainer}>
               <View style={styles.styledBoxLabel}>
-                <Text style={styles.styledBoxLabelText}>PROVIDER MODE</Text>
+                <Text style={styles.styledBoxLabelText}>provider mode</Text>
               </View>
               <View style={styles.styledBox}>
                 <View style={styles.switchRow}>
-                  <Text style={styles.styledBoxValue}>{providerModeEnabled ? 'ENABLED' : 'DISABLED'}</Text>
+                  <Text style={styles.styledBoxValue}>{providerModeEnabled ? 'enabled' : 'disabled'}</Text>
                   <Switch
                     value={providerModeEnabled}
                     onValueChange={setProviderModeEnabled}
@@ -473,7 +472,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
             <View style={styles.styledBoxContainer}>
               <View style={styles.styledBoxLabel}>
-                <Text style={styles.styledBoxLabelText}>BATTERY</Text>
+                <Text style={styles.styledBoxLabelText}>battery</Text>
               </View>
               <View style={styles.styledBox}>
                 <Text style={[
@@ -483,14 +482,14 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   {batteryLevel}%
                 </Text>
                 <Text style={styles.styledBoxSubtext}>
-                  Min threshold: {batteryThreshold}%
+                  min threshold: {batteryThreshold}%
                 </Text>
               </View>
             </View>
 
             <View style={styles.styledBoxContainer}>
               <View style={styles.styledBoxLabel}>
-                <Text style={styles.styledBoxLabelText}>BATTERY THRESHOLD</Text>
+                <Text style={styles.styledBoxLabelText}>battery threshold</Text>
               </View>
               <View style={styles.styledBox}>
                 <View style={styles.thresholdButtons}>
@@ -516,14 +515,14 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </View>
         </Accordion>
 
-        {/* Model Management */}
-        <Accordion title="Model Management" icon="download" defaultExpanded={false}>
+        {/* model management */}
+        <Accordion title="model management" icon="download" defaultExpanded={false}>
           <View style={styles.accordionContent}>
 
           {/* Storage Path */}
           <View style={styles.styledBoxContainer}>
             <View style={styles.styledBoxLabel}>
-              <Text style={styles.styledBoxLabelText}>STORAGE PATH</Text>
+              <Text style={styles.styledBoxLabelText}>storage path</Text>
             </View>
             <View style={styles.styledBox}>
               <Text style={styles.styledBoxValue} numberOfLines={2}>
@@ -579,7 +578,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             {modelDownloaded && !modelDownloading && (
               <View style={styles.modelStatusRow}>
                 <Text style={styles.modelStatusLabel}>status:</Text>
-                <Text style={styles.modelStatusReady}>● READY</Text>
+                <Text style={styles.modelStatusReady}>● ready</Text>
               </View>
             )}
 
@@ -589,7 +588,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <TouchableOpacity
                   style={styles.terminalButton}
                   onPress={handleDownloadModel}>
-                  <Text style={styles.terminalButtonText}>[ DOWNLOAD ]</Text>
+                  <Text style={styles.terminalButtonText}>[ download ]</Text>
                 </TouchableOpacity>
               )}
 
@@ -597,7 +596,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <TouchableOpacity
                   style={styles.terminalButtonDanger}
                   onPress={handleDeleteModel}>
-                  <Text style={styles.terminalButtonDangerText}>[ DELETE ]</Text>
+                  <Text style={styles.terminalButtonDangerText}>[ delete ]</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -692,7 +691,7 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 12,
   },
-  // Node Statistics - Terminal Style Boxes
+  // node statistics - Terminal Style Boxes
   statBoxContainer: {
     flex: 1,
     position: 'relative',
@@ -999,7 +998,7 @@ const styles = StyleSheet.create({
   thresholdButtonTextActive: {
     color: colors.background.primary,
   },
-  // Model Management - Terminal Style
+  // model management - Terminal Style
   modelTerminalCard: {
     backgroundColor: colors.terminal.background,
     borderRadius: 8,

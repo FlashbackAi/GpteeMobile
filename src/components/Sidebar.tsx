@@ -20,6 +20,7 @@ interface Props {
   chatHistory: ChatHistory[];
   onSelectChat: (chatId: string) => void;
   currentChatId?: string;
+  onNewChat?: () => void;
 }
 
 export const Sidebar: React.FC<Props> = ({
@@ -29,6 +30,7 @@ export const Sidebar: React.FC<Props> = ({
   chatHistory,
   onSelectChat,
   currentChatId,
+  onNewChat,
 }) => {
   const { toggleStarChat, renameChat, deleteChat } = useAppStore();
   const [menuOpenChatId, setMenuOpenChatId] = useState<string | null>(null);
@@ -108,17 +110,30 @@ export const Sidebar: React.FC<Props> = ({
                 <Icon name="home" size={20} color={colors.text.primary} />
               </TouchableOpacity>
             </View>
-            <Text style={styles.tagline}>GPT for Everyone, Free.</Text>
+            <Text style={styles.tagline}>gpt for everyone, free.</Text>
           </View>
 
           {/* Chat History */}
           <View style={styles.historySection}>
-            <Text style={styles.sectionTitle}>Chat History</Text>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>chat history</Text>
+              {onNewChat && (
+                <TouchableOpacity
+                  style={styles.newChatButton}
+                  onPress={() => {
+                    onNewChat();
+                    onClose();
+                  }}
+                >
+                  <Icon name="plus" size={16} color={colors.terminal.green} />
+                </TouchableOpacity>
+              )}
+            </View>
             <ScrollView style={styles.historyList}>
               {chatHistory.length === 0 ? (
                 <View style={styles.emptyState}>
                   <Icon name="message-square" size={32} color={colors.text.disabled} />
-                  <Text style={styles.emptyText}>No chat history yet</Text>
+                  <Text style={styles.emptyText}>no chat history yet</Text>
                 </View>
               ) : (
                 chatHistory.map((chat) => (
@@ -175,14 +190,14 @@ export const Sidebar: React.FC<Props> = ({
                           onPress={(e) => handleRenameClick(chat, e)}
                         >
                           <Icon name="edit-2" size={14} color={colors.text.primary} />
-                          <Text style={styles.menuItemText}>Rename</Text>
+                          <Text style={styles.menuItemText}>rename</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={styles.menuItem}
                           onPress={(e) => handleDeleteClick(chat.id, e)}
                         >
                           <Icon name="trash-2" size={14} color={colors.status.error} />
-                          <Text style={[styles.menuItemText, styles.menuItemTextDanger]}>Delete</Text>
+                          <Text style={[styles.menuItemText, styles.menuItemTextDanger]}>delete</Text>
                         </TouchableOpacity>
                       </View>
                     )}
@@ -195,7 +210,7 @@ export const Sidebar: React.FC<Props> = ({
           {/* Close Button */}
           <TouchableOpacity style={styles.closeButton} onPress={onClose}>
             <Icon name="x" size={24} color={colors.text.primary} />
-            <Text style={styles.closeButtonText}>Close</Text>
+            <Text style={styles.closeButtonText}>close</Text>
           </TouchableOpacity>
         </View>
         <TouchableOpacity
@@ -209,12 +224,12 @@ export const Sidebar: React.FC<Props> = ({
       {renameDialogOpen && (
         <View style={styles.dialogOverlay}>
           <View style={styles.dialog}>
-            <Text style={styles.dialogTitle}>Rename Chat</Text>
+            <Text style={styles.dialogTitle}>rename chat</Text>
             <TextInput
               style={styles.dialogInput}
               value={renameValue}
               onChangeText={setRenameValue}
-              placeholder="Enter new name"
+              placeholder="enter new name"
               placeholderTextColor={colors.text.tertiary}
               autoFocus
             />
@@ -226,13 +241,13 @@ export const Sidebar: React.FC<Props> = ({
                   setRenameValue('');
                 }}
               >
-                <Text style={styles.dialogButtonTextSecondary}>Cancel</Text>
+                <Text style={styles.dialogButtonTextSecondary}>cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.dialogButton, styles.dialogButtonPrimary]}
                 onPress={handleRenameConfirm}
               >
-                <Text style={styles.dialogButtonTextPrimary}>Rename</Text>
+                <Text style={styles.dialogButtonTextPrimary}>rename</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -243,22 +258,22 @@ export const Sidebar: React.FC<Props> = ({
       {deleteDialogOpen && (
         <View style={styles.dialogOverlay}>
           <View style={styles.dialog}>
-            <Text style={styles.dialogTitle}>Delete Chat</Text>
+            <Text style={styles.dialogTitle}>delete chat</Text>
             <Text style={styles.dialogMessage}>
-              Are you sure you want to delete this chat? This action cannot be undone.
+              are you sure you want to delete this chat? this action cannot be undone.
             </Text>
             <View style={styles.dialogButtons}>
               <TouchableOpacity
                 style={[styles.dialogButton, styles.dialogButtonSecondary]}
                 onPress={() => setDeleteDialogOpen(false)}
               >
-                <Text style={styles.dialogButtonTextSecondary}>Cancel</Text>
+                <Text style={styles.dialogButtonTextSecondary}>cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.dialogButton, styles.dialogButtonDanger]}
                 onPress={handleDeleteConfirm}
               >
-                <Text style={styles.dialogButtonTextPrimary}>Delete</Text>
+                <Text style={styles.dialogButtonTextPrimary}>delete</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -280,8 +295,8 @@ const styles = StyleSheet.create({
   sidebar: {
     width: 280,
     backgroundColor: colors.background.primary,
-    borderRightWidth: 1,
-    borderRightColor: colors.border,
+    borderRightWidth: 2,
+    borderRightColor: colors.terminal.greenDim,
     paddingTop: 50,
     paddingBottom: 20,
   },
@@ -289,7 +304,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 24,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomColor: colors.terminal.greenDim,
   },
   brandingHeader: {
     flexDirection: 'row',
@@ -301,11 +316,14 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.accent.primary,
     letterSpacing: -0.5,
+    fontFamily: 'spacegroteskbold',
   },
   homeIconButton: {
     padding: 8,
     borderRadius: 8,
-    backgroundColor: colors.background.card,
+    backgroundColor: colors.terminal.background,
+    borderWidth: 1,
+    borderColor: colors.terminal.greenDim,
   },
   tagline: {
     fontSize: 11,
@@ -317,14 +335,28 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: 16,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
   sectionTitle: {
     fontSize: 12,
     fontWeight: '700',
     color: colors.text.tertiary,
-    textTransform: 'uppercase',
     letterSpacing: 0.5,
-    paddingHorizontal: 20,
-    marginBottom: 12,
+  },
+  newChatButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    backgroundColor: colors.terminal.background,
+    borderWidth: 1,
+    borderColor: colors.terminal.greenDim,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   historyList: {
     flex: 1,
@@ -350,12 +382,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomColor: colors.terminal.greenDim,
   },
   chatItemActive: {
-    backgroundColor: colors.background.card,
+    backgroundColor: colors.terminal.background,
     borderRightWidth: 3,
     borderRightColor: colors.accent.primary,
+    borderLeftWidth: 2,
+    borderLeftColor: colors.terminal.greenDim,
   },
   chatItemMain: {
     flex: 1,
@@ -389,10 +423,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 20,
     top: 45,
-    backgroundColor: colors.background.card,
+    backgroundColor: colors.terminal.background,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.terminal.greenDim,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
@@ -433,8 +467,8 @@ const styles = StyleSheet.create({
     padding: 24,
     width: '80%',
     maxWidth: 400,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderWidth: 2,
+    borderColor: colors.terminal.greenDim,
   },
   dialogTitle: {
     fontSize: 20,
@@ -500,7 +534,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 20,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: colors.terminal.greenDim,
     marginTop: 16,
   },
   closeButtonText: {

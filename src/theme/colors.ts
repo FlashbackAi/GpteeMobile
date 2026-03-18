@@ -1,3 +1,12 @@
+// Space Grotesk font family
+export const fonts = {
+  regular: 'spacegrotesk',
+  medium: 'spacegroteskmedium',
+  semiBold: 'spacegrotesksemibold',
+  bold: 'spacegroteskbold',
+  light: 'spacegrotesklight',
+};
+
 // Pure black theme for GPTee
 export const colors = {
   // Background colors
@@ -16,12 +25,12 @@ export const colors = {
     disabled: '#505050',     // Dark grey
   },
 
-  // Accent colors
+  // Accent colors (developer aesthetic)
   accent: {
-    primary: '#D4A574',      // Warm tan/beige (kept for contrast)
-    secondary: '#C4915C',    // Darker tan
-    tertiary: '#E8D4B8', 
-    neutral: '#FFFFFF'    // Light cream
+    primary: '#27c93f',      // Terminal green
+    secondary: '#00d9ff',    // Cyan blue
+    tertiary: '#1db954',     // Darker green
+    neutral: '#FFFFFF',      // White
   },
 
   // Terminal colors (developer aesthetic)
@@ -57,8 +66,8 @@ export const colors = {
 
   // Button colors
   button: {
-    primary: '#D4A574',
-    primaryText: '#000000',
+    primary: '#27c93f',      // Terminal green
+    primaryText: '#000000',  // Black text on green
     secondary: '#1A1A1A',
     secondaryText: '#FFFFFF',
     disabled: '#2A2A2A',

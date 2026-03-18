@@ -128,8 +128,8 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
       // Show elegant toast notification
       Toast.show({
         type: 'info',
-        text1: 'Provider Switched',
-        text2: `Now using ${newProviderName} (${tokensReceived} tokens preserved)`,
+        text1: 'provider switched',
+        text2: `now using ${newProviderName} (${tokensReceived} tokens preserved)`,
         position: 'top',
         visibilityTime: 3000,
       });
@@ -152,7 +152,7 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
       // Show elegant error toast
       Toast.show({
         type: 'error',
-        text1: 'Inference Failed',
+        text1: 'inference failed',
         text2: message,
         position: 'top',
         visibilityTime: 4000,
@@ -278,8 +278,8 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
         if (batteryPercent < batteryThreshold) {
           Toast.show({
             type: 'error',
-            text1: 'Battery Too Low',
-            text2: `Please charge above ${batteryThreshold}% to enable provider mode`,
+            text1: 'battery too low',
+            text2: `please charge above ${batteryThreshold}% to enable provider mode`,
             position: 'top',
             visibilityTime: 4000,
           });
@@ -496,8 +496,8 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
         </View>
 
         <View style={styles.providerRow}>
-          <Text style={styles.providerLabel}>Model</Text>
-          <Text style={styles.providerValue}>{modelLoaded ? 'Loaded' : 'Not loaded'}</Text>
+          <Text style={styles.providerLabel}>model</Text>
+          <Text style={styles.providerValue}>{modelLoaded ? 'loaded' : 'not loaded'}</Text>
         </View>
 
         {activeJob && (
@@ -599,11 +599,11 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => setShowSidebar(true)} style={styles.headerButton}>
-            <Icon name="menu" size={24} color={colors.text.primary} />
+            <Icon name="menu" size={20} color={colors.text.primary} />
           </TouchableOpacity>
 
           <View style={styles.localToggleContainer}>
-            <Text style={styles.toggleLabel}>Local</Text>
+            <Text style={styles.toggleLabel}>local</Text>
             <Switch
               value={useLocalModel}
               onValueChange={toggleLocalMode}
@@ -621,8 +621,8 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
               activeOpacity={0.7}
             >
               <View style={[styles.nodeDot, (connected && providerModeEnabled) ? styles.nodeDotGreen : styles.nodeDotRed]} />
-              <Text style={styles.nodeChipText}>Node</Text>
-              <Icon name="terminal" size={14} color={colors.text.primary} />
+              <Text style={styles.nodeChipText}>node</Text>
+              <Icon name="terminal" size={12} color={colors.text.primary} />
             </TouchableOpacity>
             <Switch
               value={providerModeEnabled}
@@ -639,8 +639,8 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
             style={styles.logsChip}
             activeOpacity={0.7}
           >
-            <Text style={styles.logsChipText}>Logs</Text>
-            <Icon name="file-text" size={14} color={colors.text.primary} />
+            <Text style={styles.logsChipText}>logs</Text>
+            <Icon name="file-text" size={12} color={colors.text.primary} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -648,7 +648,7 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
             style={styles.settingsChip}
             activeOpacity={0.7}
           >
-            <Icon name="settings" size={18} color={colors.text.primary} />
+            <Icon name="settings" size={16} color={colors.text.primary} />
           </TouchableOpacity>
         </View>
 
@@ -680,7 +680,7 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
         <View style={styles.statusBar}>
           <View style={[styles.statusDot, { backgroundColor: connected ? colors.status.success : colors.status.error }]} />
           <Text style={styles.statusText}>
-            {connected ? 'Connected' : 'Connecting...'}
+            {connected ? 'connected' : 'connecting...'}
           </Text>
           <Text style={styles.statusText}>•</Text>
           {!useLocalModel && providers.length > 0 ? (
@@ -695,7 +695,7 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
             </TouchableOpacity>
           ) : (
             <Text style={styles.statusText}>
-              {useLocalModel ? (modelLoaded ? 'Local Model' : 'Loading Model...') : 'No providers'}
+              {useLocalModel ? (modelLoaded ? 'local model' : 'loading model...') : 'no providers'}
             </Text>
           )}
         </View>
@@ -705,27 +705,27 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
         {liveMetrics && useLocalModel && (
           <View style={styles.metricsBar}>
             <View style={styles.metricItem}>
-              <Text style={styles.metricLabel}>Tokens</Text>
+              <Text style={styles.metricLabel}>tokens</Text>
               <Text style={styles.metricValue}>{liveMetrics.tokensGenerated}</Text>
             </View>
             <View style={styles.metricDivider} />
             <View style={styles.metricItem}>
-              <Text style={styles.metricLabel}>Speed</Text>
+              <Text style={styles.metricLabel}>speed</Text>
               <Text style={styles.metricValue}>
                 {liveMetrics.tokensPerSecond.toFixed(1)} t/s
               </Text>
             </View>
             <View style={styles.metricDivider} />
             <View style={styles.metricItem}>
-              <Text style={styles.metricLabel}>Time</Text>
+              <Text style={styles.metricLabel}>time</Text>
               <Text style={styles.metricValue}>
                 {(liveMetrics.elapsedMs / 1000).toFixed(1)}s
               </Text>
             </View>
             <View style={styles.metricDivider} />
             <View style={styles.metricItem}>
-              <Text style={styles.metricLabel}>Model</Text>
-              <Text style={[styles.metricValue, styles.metricValueSmall]}>Qwen3.5</Text>
+              <Text style={styles.metricLabel}>model</Text>
+              <Text style={[styles.metricValue, styles.metricValueSmall]}>qwen3.5</Text>
             </View>
           </View>
         )}
@@ -743,51 +743,51 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
             <View style={styles.emptyState}>
               {useLocalModel && !modelDownloaded ? (
                 <>
-                  <Text style={styles.emptyText}>Model not downloaded.</Text>
+                  <Text style={styles.emptyText}>model not downloaded.</Text>
                   {onOpenProfile && (
                     <TouchableOpacity style={styles.downloadButton} onPress={onOpenProfile}>
-                      <Text style={styles.downloadButtonText}>Download Model</Text>
+                      <Text style={styles.downloadButtonText}>download model</Text>
                     </TouchableOpacity>
                   )}
                 </>
               ) : !modelLoaded && useLocalModel ? (
-                <Text style={styles.emptyText}>Loading model...\nPlease wait.</Text>
+                <Text style={styles.emptyText}>loading model...\nplease wait.</Text>
               ) : !useLocalModel && providers.length === 0 ? (
-                <Text style={styles.emptyText}>No providers online.\nSwitch to Local to use your own model.</Text>
+                <Text style={styles.emptyText}>no providers online.\nswitch to local to use your own model.</Text>
               ) : (
                 <>
-                  <Text style={styles.emptyStateTitle}>Ask me anything</Text>
+                  <Text style={styles.emptyStateTitle}>ask me anything</Text>
                   <View style={styles.suggestionGrid}>
                     <TouchableOpacity
                       style={styles.suggestionCard}
-                      onPress={() => setInput('Write a creative story about ')}
+                      onPress={() => setInput('write a creative story about ')}
                     >
                       <Icon name="edit" size={20} color={colors.accent.primary} style={styles.suggestionIcon} />
-                      <Text style={styles.suggestionText}>Help me write</Text>
+                      <Text style={styles.suggestionText}>help me write</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       style={styles.suggestionCard}
-                      onPress={() => setInput('Summarize this text: ')}
+                      onPress={() => setInput('summarize this text: ')}
                     >
                       <Icon name="file-text" size={20} color={colors.accent.secondary} style={styles.suggestionIcon} />
-                      <Text style={styles.suggestionText}>Summarize text</Text>
+                      <Text style={styles.suggestionText}>summarize text</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       style={styles.suggestionCard}
-                      onPress={() => setInput('Explain how ')}
+                      onPress={() => setInput('explain how ')}
                     >
                       <Icon name="help-circle" size={20} color={colors.accent.primary} style={styles.suggestionIcon} />
-                      <Text style={styles.suggestionText}>Explain a topic</Text>
+                      <Text style={styles.suggestionText}>explain a topic</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       style={styles.suggestionCard}
-                      onPress={() => setInput('Analyze and provide insights on ')}
+                      onPress={() => setInput('analyze and provide insights on ')}
                     >
                       <Icon name="trending-up" size={20} color={colors.accent.secondary} style={styles.suggestionIcon} />
-                      <Text style={styles.suggestionText}>Analyze data</Text>
+                      <Text style={styles.suggestionText}>analyze data</Text>
                     </TouchableOpacity>
                   </View>
                 </>
@@ -805,11 +805,11 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
             placeholder={
               useLocalModel
                 ? modelLoaded
-                  ? 'Ask me anything (using local model)...'
-                  : 'Loading model...'
+                  ? 'ask me anything (using local model)...'
+                  : 'loading model...'
                 : providers.length > 0
-                ? `Ask me anything (using remote provider)...`
-                : 'No providers online...'
+                ? `ask me anything (using remote provider)...`
+                : 'no providers online...'
             }
             placeholderTextColor={colors.input.placeholder}
             multiline
@@ -850,6 +850,9 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
           setShowSidebar(false);
         }}
         currentChatId={currentChatId || undefined}
+        onNewChat={async () => {
+          await startNewChat();
+        }}
       />
 
       {/* Toast Notifications */}
@@ -881,16 +884,19 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 6,
     paddingTop: Platform.OS === 'android' ? 48 : 12,
-    paddingBottom: 12,
+    paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomColor: colors.terminal.greenDim,
     gap: 6,
+    backgroundColor: colors.background.primary,
   },
   headerButton: {
-    padding: 0,
-    marginRight: 2,
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerButtonText: {
     fontSize: 24,
@@ -900,31 +906,38 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingVertical: 2,
-    paddingHorizontal: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
     borderRadius: 6,
-    backgroundColor: colors.background.card,
+    backgroundColor: colors.terminal.background,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.terminal.blueDim,
+    height: 36,
   },
   localToggleSwitch: {
     transform: [{ scaleX: 0.65 }, { scaleY: 0.65 }],
   },
+  toggleLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.text.primary,
+  },
   nodeChipContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    paddingVertical: 2,
-    paddingHorizontal: 4,
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
     borderRadius: 6,
-    backgroundColor: colors.background.card,
+    backgroundColor: colors.terminal.background,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.terminal.greenDim,
+    height: 36,
   },
   nodeChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: 3,
   },
   nodeToggle: {
     transform: [{ scaleX: 0.65 }, { scaleY: 0.65 }],
@@ -948,26 +961,30 @@ const styles = StyleSheet.create({
   logsChip: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 4,
     paddingVertical: 4,
     paddingHorizontal: 8,
     borderRadius: 6,
-    backgroundColor: colors.background.card,
+    backgroundColor: colors.terminal.background,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.terminal.blueDim,
+    height: 36,
   },
   logsChipText: {
-    fontSize: 14,
+    fontSize: 11,
     fontWeight: '600',
     color: colors.text.primary,
   },
   settingsChip: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderRadius: 6,
-    backgroundColor: colors.background.card,
+    backgroundColor: colors.terminal.background,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.terminal.greenDim,
   },
   toggleContainer: {
     flexDirection: 'row',
@@ -1038,7 +1055,9 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 16,
     paddingVertical: 8,
-    backgroundColor: colors.background.secondary,
+    backgroundColor: colors.terminal.background,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.terminal.greenDim,
   },
   statusDot: {
     width: 8,
@@ -1263,8 +1282,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: colors.terminal.greenDim,
     gap: 8,
+    backgroundColor: colors.background.primary,
   },
   input: {
     flex: 1,

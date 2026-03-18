@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Platform } from 'react-native';
+import { Platform, Text, TextInput } from 'react-native';
 import DeviceInfo from 'react-native-device-info';
+import { fonts } from './src/theme/colors';
 import { relayClient } from './src/network/RelayClient';
 import { useAppStore, UserProfile } from './src/store/appStore';
 import { llamaEngine } from './src/inference/LlamaEngine';
@@ -11,6 +12,13 @@ import { ProfileScreen } from './src/screens/ProfileScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import { ChatMessage } from './src/network/PeerProtocol';
 import { ModelDownloadManager, AVAILABLE_MODELS } from './src/services/ModelDownloadManager';
+
+// Set default font for all Text and TextInput components
+(Text as any).defaultProps = (Text as any).defaultProps || {};
+(Text as any).defaultProps.style = { fontFamily: fonts.regular };
+
+(TextInput as any).defaultProps = (TextInput as any).defaultProps || {};
+(TextInput as any).defaultProps.style = { fontFamily: fonts.regular };
 
 export default function App() {
   const [showProfile, setShowProfile] = useState(false);
