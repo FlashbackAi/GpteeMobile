@@ -26,7 +26,7 @@ import { WebRTCClient } from './WebRTCClient';
 // Example for local testing: ws://192.168.1.100:8080
 // Example for deployed: ws://your-server.com:8080
 // **** AWS EIP: 13.126.31.242*****
-export const RELAY_URL = 'ws://13.126.31.242:9293'; // Android emulator localhost
+export const RELAY_URL = 'ws://192.168.0.66:9293'; // Android emulator localhost
 
 // ── Callback types ────────────────────────────────────────────────────────────
 export type OnProvidersUpdated = (providers: ProviderInfo[]) => void;
@@ -352,14 +352,6 @@ class RelayClient {
     if (!this.webrtcClient) {
       // Initialize WebRTC client if we receive an offer (we're the answerer)
       if (msg.type === 'webrtc_offer') {
-        // Reject offer if provider is busy (already processing a request)
-        // This prevents establishing WebRTC with a second consumer while serving the first
-        if (this.providerBusy) {
-          console.log('[RelayClient] ⛔ Rejecting WebRTC offer - provider is busy');
-          // Don't initialize WebRTC, the inference request will be queued separately
-          return;
-        }
-
         // console.log('[RelayClient] Initializing WebRTC as answerer');
         this.webrtcInitializing = true;
         this.initializeWebRTC(msg.from);
@@ -526,6 +518,8 @@ class RelayClient {
     // Send via WebRTC only - no relay fallback
     if (this.webrtcClient?.isConnected()) {
       console.log('[RelayClient] ✅ Sending request via WebRTC to', providerId);
+      // Update activeProviderId when reusing existing WebRTC connection
+      this.activeProviderId = providerId;
       this.webrtcClient.sendMessage(msg);
     } else {
       const error = '❌ WebRTC not connected. Cannot send inference request via relay (P2P-only mode).';

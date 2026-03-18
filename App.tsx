@@ -165,6 +165,9 @@ export default function App() {
     relayClient.onInferenceRequest = async (req) => {
       const { providerModeEnabled: accepting, modelLoaded, addLog } = useAppStore.getState();
 
+      console.log(`[App] 📨 onInferenceRequest called - requestId: ${req.requestId}, from: ${req.from.slice(0, 8)}`);
+      console.log(`[App] 🔍 Current active request: ${activeRequestRef.current?.requestId || 'none'}`);
+
       if (!accepting || !modelLoaded) {
         console.log('[App] Ignoring inference request - not accepting or model not loaded');
         return;
@@ -172,16 +175,18 @@ export default function App() {
 
       // Check if already processing a request - reject with error
       if (activeRequestRef.current && !activeRequestRef.current.cancelled) {
-        console.log(`[App] ⛔ Provider busy - rejecting request ${req.requestId}`);
+        console.log(`[App] ⛔ Provider busy - rejecting request ${req.requestId} (currently processing ${activeRequestRef.current.requestId})`);
         addLog(`⛔ Busy - rejected request from ${req.from.slice(0, 8)}`);
         // Consumer will failover to another provider
         return;
       }
 
       // Process request
+      console.log(`[App] ✅ Accepting request ${req.requestId}`);
       activeRequestRef.current = { requestId: req.requestId, cancelled: false };
       addLog(`📥 Request from ${req.from.slice(0, 8)}: "${req.prompt.slice(0, 40)}..."`);
       await handleInferenceRequest(req);
+      console.log(`[App] ✅ Completed request ${req.requestId}`);
     };
 
     // Set up cancel request handler (global)
