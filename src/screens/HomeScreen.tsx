@@ -10,6 +10,8 @@ import {
   Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
+import Toast from 'react-native-toast-message';
+import DeviceInfo from 'react-native-device-info';
 import { useAppStore } from '../store/appStore';
 import { colors } from '../theme/colors';
 import { NodeInfoPopup } from '../components/NodeInfoPopup';
@@ -28,6 +30,7 @@ export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
   const modelLoaded = useAppStore((s) => s.modelLoaded);
   const providerModeEnabled = useAppStore((s) => s.providerModeEnabled);
   const setProviderModeEnabled = useAppStore((s) => s.setProviderModeEnabled);
+  const batteryThreshold = useAppStore((s) => s.batteryThreshold);
   const userProfile = useAppStore((s) => s.userProfile);
   const chatHistory = useAppStore((s) => s.chatHistory);
   const currentChatId = useAppStore((s) => s.currentChatId);
@@ -43,6 +46,33 @@ export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
   const [showNodeInfo, setShowNodeInfo] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
+
+  // Handle provider mode toggle with battery check
+  const handleProviderToggle = async (value: boolean) => {
+    if (value) {
+      // Check battery level before enabling
+      try {
+        const level = await DeviceInfo.getBatteryLevel();
+        const batteryPercent = Math.round(level * 100);
+
+        if (batteryPercent < batteryThreshold) {
+          Toast.show({
+            type: 'error',
+            text1: 'Battery Too Low',
+            text2: `Please charge above ${batteryThreshold}% to enable provider mode`,
+            position: 'top',
+            visibilityTime: 4000,
+          });
+          return; // Don't enable provider mode
+        }
+      } catch (error) {
+        console.error('Error checking battery level:', error);
+      }
+    }
+
+    // Battery is sufficient or turning off - proceed
+    setProviderModeEnabled(value);
+  };
 
   // Load chat history and logs on mount
   useEffect(() => {
@@ -142,9 +172,9 @@ export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
               </View>
               <Switch
                 value={providerModeEnabled}
-                onValueChange={setProviderModeEnabled}
+                onValueChange={handleProviderToggle}
                 trackColor={{ false: colors.input.border, true: colors.accent.primary }}
-                thumbColor={providerModeEnabled ? colors.button.primaryText : colors.text.tertiary}
+                thumbColor={providerModeEnabled ? colors.button.secondaryText : colors.text.tertiary}
                 disabled={!modelDownloaded}
               />
             </View>

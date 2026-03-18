@@ -13,6 +13,7 @@ export interface ChatHistory {
   name: string;
   timestamp: number;
   messages: ChatMessage[];
+  starred?: boolean;
 }
 
 interface AppState {
@@ -98,6 +99,8 @@ interface AppState {
   loadChat: (chatId: string) => Promise<void>;
   loadChatHistory: () => Promise<void>;
   deleteChat: (chatId: string) => Promise<void>;
+  toggleStarChat: (chatId: string) => Promise<void>;
+  renameChat: (chatId: string, newName: string) => Promise<void>;
   startNewChat: () => void;
   addLog: (msg: string) => void;
   loadLogs: () => Promise<void>;
@@ -395,6 +398,38 @@ export const useAppStore = create<AppState>((set, get) => ({
       await AsyncStorage.setItem('chatHistory', JSON.stringify(updatedHistory));
     } catch (e) {
       console.error('[AppStore] Failed to delete chat:', e);
+    }
+  },
+
+  // Toggle star status for a chat
+  toggleStarChat: async (chatId) => {
+    const { chatHistory } = get();
+    const updatedHistory = chatHistory.map(chat =>
+      chat.id === chatId ? { ...chat, starred: !chat.starred } : chat
+    );
+
+    set({ chatHistory: updatedHistory });
+
+    try {
+      await AsyncStorage.setItem('chatHistory', JSON.stringify(updatedHistory));
+    } catch (e) {
+      console.error('[AppStore] Failed to toggle star:', e);
+    }
+  },
+
+  // Rename a chat
+  renameChat: async (chatId, newName) => {
+    const { chatHistory } = get();
+    const updatedHistory = chatHistory.map(chat =>
+      chat.id === chatId ? { ...chat, name: newName } : chat
+    );
+
+    set({ chatHistory: updatedHistory });
+
+    try {
+      await AsyncStorage.setItem('chatHistory', JSON.stringify(updatedHistory));
+    } catch (e) {
+      console.error('[AppStore] Failed to rename chat:', e);
     }
   },
 
