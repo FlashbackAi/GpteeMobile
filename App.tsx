@@ -50,9 +50,6 @@ export default function App() {
   // Track active inference request to handle cancellation
   const activeRequestRef = React.useRef<{requestId: string, cancelled: boolean} | null>(null);
 
-  // Queue for pending inference requests
-  const requestQueueRef = React.useRef<Array<{req: any, startTime: number}>>([]);
-
   useEffect(() => {
     const loadData = async () => {
       await loadUserProfile();
@@ -105,83 +102,15 @@ export default function App() {
     };
 
     relayClient.onProvidersUpdated = (providers) => {
+      console.log(`[App] 📥 onProvidersUpdated called with ${providers.length} providers`);
+      providers.forEach((p, i) => {
+        console.log(`[App]   ${i + 1}. ${p.displayName} (${p.peerId.substring(0, 8)}...)`);
+      });
       setProviders(providers);
+      console.log(`[App] ✅ setProviders called with ${providers.length} providers`);
     };
 
-    // Helper to wait for WebRTC connection to be established
-    const waitForWebRTC = (peerId: string, timeoutMs: number): Promise<boolean> => {
-      return new Promise((resolve) => {
-        const startTime = Date.now();
-        const checkInterval = setInterval(() => {
-          // Check if WebRTC is connected to the correct peer
-          if (relayClient.isWebRTCConnected() && relayClient.getActiveProviderId() === peerId) {
-            clearInterval(checkInterval);
-            resolve(true);
-          } else if (Date.now() - startTime > timeoutMs) {
-            clearInterval(checkInterval);
-            resolve(false);
-          }
-        }, 100); // Check every 100ms
-      });
-    };
-
-    // Helper function to process next request in queue
-    const processNextRequest = async () => {
-      if (requestQueueRef.current.length === 0) {
-        activeRequestRef.current = null;
-        relayClient.setProviderBusy(false);
-        return;
-      }
-
-      const { req, startTime } = requestQueueRef.current.shift()!;
-      const { addLog } = useAppStore.getState();
-
-      // Track this request and mark as busy
-      activeRequestRef.current = { requestId: req.requestId, cancelled: false };
-      relayClient.setProviderBusy(true);
-
-      // Notify queue of updated positions
-      sendQueueUpdates();
-
-      const waitTime = Date.now() - startTime;
-      addLog(`📥 Processing request from ${req.from.slice(0, 8)} (waited ${(waitTime / 1000).toFixed(1)}s)`);
-
-      // Check if we need to switch to a different consumer
-      const currentPeer = relayClient.getActiveProviderId();
-      if (currentPeer && currentPeer !== req.from) {
-        addLog(`🔄 Switching from ${currentPeer.slice(0, 8)} to ${req.from.slice(0, 8)} - closing old WebRTC`);
-        relayClient.closeWebRTC();
-      }
-
-      // If no WebRTC connection, send ready-to-process signal
-      if (!relayClient.isWebRTCConnected() || relayClient.getActiveProviderId() !== req.from) {
-        // Send ready-to-process signal so consumer can retry WebRTC
-        relayClient.sendReadyToProcess(req.from, req.requestId);
-        addLog(`📤 Sent ready signal to ${req.from.slice(0, 8)}, waiting for WebRTC...`);
-
-        // Wait for WebRTC to be established (max 10 seconds)
-        const webrtcReady = await waitForWebRTC(req.from, 10000);
-        if (!webrtcReady) {
-          addLog(`⚠️ WebRTC not established after 10s, request will fail`);
-        }
-      } else {
-        addLog(`✅ WebRTC already connected to ${req.from.slice(0, 8)}, reusing connection`);
-      }
-
-      await handleInferenceRequest(req);
-
-      // Process next in queue
-      processNextRequest();
-    };
-
-    // Helper to send queue status updates to all waiting consumers
-    const sendQueueUpdates = () => {
-      requestQueueRef.current.forEach((item, index) => {
-        relayClient.sendQueueStatus(item.req.from, item.req.requestId, index + 1, requestQueueRef.current.length);
-      });
-    };
-
-    // Actual inference handling logic
+    // Handle inference request
     const handleInferenceRequest = async (req: any) => {
       const { addLog } = useAppStore.getState();
 
@@ -224,14 +153,11 @@ export default function App() {
           addLog(`🛑 Request cancelled - ${tokensEmitted} tokens generated before stop`);
         }
 
-        // Clear active request and mark provider as not busy
-        // Keep WebRTC open for same consumer to send more requests
+        // Clear active request
         activeRequestRef.current = null;
-        relayClient.setProviderBusy(false);
       } catch (error: any) {
         addLog(`❌ Error: ${error.message}`);
         activeRequestRef.current = null;
-        relayClient.setProviderBusy(false);
       }
     };
 
@@ -244,32 +170,18 @@ export default function App() {
         return;
       }
 
-      // Check if already processing a request
+      // Check if already processing a request - reject with error
       if (activeRequestRef.current && !activeRequestRef.current.cancelled) {
-        // Add to queue
-        requestQueueRef.current.push({ req, startTime: Date.now() });
-        const queuePos = requestQueueRef.current.length;
-
-        console.log(`[App] 📋 Provider busy - queued request ${req.requestId} (position ${queuePos})`);
-        addLog(`📋 Queued request from ${req.from.slice(0, 8)} (position ${queuePos})`);
-
-        // Send queue status to consumer
-        relayClient.sendQueueStatus(req.from, req.requestId, queuePos, queuePos);
+        console.log(`[App] ⛔ Provider busy - rejecting request ${req.requestId}`);
+        addLog(`⛔ Busy - rejected request from ${req.from.slice(0, 8)}`);
+        // Consumer will failover to another provider
         return;
       }
 
-      // Process immediately if not busy
+      // Process request
       activeRequestRef.current = { requestId: req.requestId, cancelled: false };
-
-      // Mark as busy IMMEDIATELY to reject concurrent WebRTC offers
-      relayClient.setProviderBusy(true);
-
       addLog(`📥 Request from ${req.from.slice(0, 8)}: "${req.prompt.slice(0, 40)}..."`);
-
       await handleInferenceRequest(req);
-
-      // Process next in queue after completion
-      processNextRequest();
     };
 
     // Set up cancel request handler (global)
@@ -313,6 +225,8 @@ export default function App() {
       acceptingJobs: providerModeEnabled && modelLoaded,
       displayName: userProfile?.displayName || 'Unknown Device',
     };
+
+    console.log(`[App] 🔄 Updating registration - modelLoaded: ${modelLoaded}, providerModeEnabled: ${providerModeEnabled}, acceptingJobs: ${deviceInfo.acceptingJobs}`);
     relayClient.updateRegistration(deviceInfo);
 
     if (modelLoaded && providerModeEnabled) {

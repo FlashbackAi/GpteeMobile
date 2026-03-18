@@ -38,8 +38,6 @@ export type OnCancelRequest = (requestId: string) => void;
 export type OnConnectionChange = (connected: boolean) => void;
 export type OnProviderFailover = (requestId: string, newProviderName: string, tokensReceived: number) => void;
 export type OnInferenceError = (requestId: string, code: string, message: string) => void;
-export type OnQueueStatus = (requestId: string, queuePosition: number, queueLength: number) => void;
-export type OnReadyToProcess = (requestId: string) => void;
 
 // ── RelayClient ───────────────────────────────────────────────────────────────
 class RelayClient {
@@ -57,7 +55,6 @@ class RelayClient {
   private useWebRTC = true; // Enable WebRTC by default
   private webrtcInitializing = false; // Track if WebRTC is being initialized
   private messageQueue: Array<{ msg: GPTeeMessage; resolve: () => void }> = []; // Queue messages during WebRTC setup
-  private providerBusy = false; // Track if provider is busy processing a request
 
   // Request tracking for client-side failover
   private pendingRequests = new Map<string, {
@@ -80,8 +77,6 @@ class RelayClient {
   onConnectionChange: OnConnectionChange | null = null;
   onProviderFailover: OnProviderFailover | null = null;
   onInferenceError: OnInferenceError | null = null;
-  onQueueStatus: OnQueueStatus | null = null;
-  onReadyToProcess: OnReadyToProcess | null = null;
 
   constructor() {
     this.peerId = this.getOrCreatePeerId();
@@ -119,15 +114,6 @@ class RelayClient {
     return this.providers.find(p => p.peerId === pending.providerId) || null;
   }
 
-  // ── Provider busy state management ────────────────────────────────────────────
-  setProviderBusy(busy: boolean) {
-    this.providerBusy = busy;
-    console.log(`[RelayClient] Provider busy state: ${busy}`);
-  }
-
-  isProviderBusy(): boolean {
-    return this.providerBusy;
-  }
 
   // Close WebRTC if connected to wrong peer (prevents cross-contamination)
   ensureCorrectPeer(expectedPeerId: string) {
@@ -255,10 +241,14 @@ class RelayClient {
       case 'provider_list': {
         const pl = msg as ProviderListMessage;
         console.log(`[RelayClient] 📋 Provider list updated: ${pl.providers.length} providers`);
+        console.log(`[RelayClient] 🔍 Current peerId: ${this.peerId}`);
+        console.log(`[RelayClient] 🔍 onProvidersUpdated callback exists: ${!!this.onProvidersUpdated}`);
         pl.providers.forEach((p, i) => {
-          console.log(`[RelayClient]   ${i + 1}. ${p.displayName} (${p.peerId.substring(0, 8)}...)`);
+          const isSelf = p.peerId === this.peerId;
+          console.log(`[RelayClient]   ${i + 1}. ${p.displayName} (${p.peerId.substring(0, 8)}...)${isSelf ? ' ← THIS NODE' : ''}`);
         });
         this.providers = pl.providers; // Store for failover
+        console.log(`[RelayClient] 📤 Calling onProvidersUpdated with ${pl.providers.length} providers`);
         this.onProvidersUpdated?.(pl.providers);
         break;
       }
@@ -341,23 +331,6 @@ class RelayClient {
         break;
       }
 
-      case 'queue_status': {
-        const queue = msg as QueueStatusMessage;
-        console.log(`[RelayClient] 📋 Queue position ${queue.queuePosition} of ${queue.queueLength} for request ${queue.requestId}`);
-
-        // Notify UI about queue status
-        this.onQueueStatus?.(queue.requestId, queue.queuePosition, queue.queueLength);
-        break;
-      }
-
-      case 'ready_to_process': {
-        const ready = msg as ReadyToProcessMessage;
-        console.log(`[RelayClient] 📤 Provider ready to process request ${ready.requestId} - retrying WebRTC`);
-
-        // Retry WebRTC connection for this request
-        this.onReadyToProcess?.(ready.requestId);
-        break;
-      }
 
       case 'pong': {
         // keepalive ack
@@ -645,17 +618,6 @@ class RelayClient {
     this.sendInferenceRequestInternal(nextProvider.peerId, pending.prompt, pending.conversationHistory, requestId);
   }
 
-  // ── Retry inference request (when provider signals ready) ─────────────────────
-  retryInferenceRequest(requestId: string) {
-    const pending = this.pendingRequests.get(requestId);
-    if (!pending) {
-      console.log(`[RelayClient] ⚠️ No pending request found for ${requestId}`);
-      return;
-    }
-
-    console.log(`[RelayClient] 🔄 Retrying request ${requestId} - provider is ready`);
-    this.sendInferenceRequestInternal(pending.providerId, pending.prompt, pending.conversationHistory, requestId);
-  }
 
   // ── Internal send (for retries) ───────────────────────────────────────────────
   private async sendInferenceRequestInternal(
@@ -790,38 +752,6 @@ class RelayClient {
     }
   }
 
-  // Send queue status to consumer (provider → consumer)
-  sendQueueStatus(userPeerId: string, requestId: string, queuePosition: number, queueLength: number) {
-    const msg: QueueStatusMessage = {
-      type: 'queue_status',
-      id: uuidv4(),
-      from: this.peerId,
-      to: userPeerId,
-      timestamp: Date.now(),
-      requestId,
-      queuePosition,
-      queueLength,
-    };
-
-    // Send via relay (queue updates don't need WebRTC speed)
-    this.send(msg);
-  }
-
-  // Send ready-to-process signal to consumer (provider → consumer)
-  // Tells consumer to retry WebRTC connection
-  sendReadyToProcess(userPeerId: string, requestId: string) {
-    const msg: ReadyToProcessMessage = {
-      type: 'ready_to_process',
-      id: uuidv4(),
-      from: this.peerId,
-      to: userPeerId,
-      timestamp: Date.now(),
-      requestId,
-    };
-
-    console.log(`[RelayClient] 📤 Sending ready-to-process signal to ${userPeerId.slice(0, 8)} for request ${requestId}`);
-    this.send(msg);
-  }
 
   // ── Send full response (non-streaming fallback) ──────────────────────────────
   sendInferenceResponse(

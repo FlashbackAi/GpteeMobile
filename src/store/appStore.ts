@@ -50,8 +50,6 @@ interface AppState {
   messages: ChatMessage[];
   isGenerating: boolean;
   currentRequestId: string | null;
-  queuePosition: number | null; // Position in provider's queue (null if not queued)
-  queueLength: number | null; // Total queue length (null if not queued)
 
   // Chat history
   chatHistory: ChatHistory[];
@@ -93,7 +91,6 @@ interface AppState {
   finaliseMessage: (requestId: string, tokensGenerated: number, durationMs: number, fulfilledBy?: string) => void;
   setGenerating: (v: boolean) => void;
   setCurrentRequestId: (id: string | null) => void;
-  setQueueStatus: (position: number | null, length: number | null) => void;
   setLocalInferenceMode: (v: boolean) => Promise<void>;
   loadLocalInferenceMode: () => Promise<void>;
   clearMessages: () => void;
@@ -132,8 +129,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   messages: [],
   isGenerating: false,
   currentRequestId: null,
-  queuePosition: null,
-  queueLength: null,
   chatHistory: [],
   currentChatId: null,
   logs: [],
@@ -176,9 +171,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setProviderModeEnabled: async (v) => {
+    console.log(`[AppStore] 🔧 setProviderModeEnabled called with: ${v}`);
     set({ providerModeEnabled: v });
+    console.log(`[AppStore] ✅ State updated - providerModeEnabled: ${v}`);
     try {
       await AsyncStorage.setItem('providerModeEnabled', v ? 'true' : 'false');
+      console.log(`[AppStore] 💾 AsyncStorage saved - providerModeEnabled: ${v}`);
     } catch (e) {
       console.error('[AppStore] Failed to save provider mode state:', e);
     }
@@ -250,9 +248,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   setAssignedProviderId: (id) => set({ assignedProviderId: id }),
 
   addMessage: (msg) =>
-    set((s) => ({ messages: [...s.messages, msg] })),
+    set((s) => ({
+      messages: [...s.messages, {
+        ...msg,
+        content: String(msg.content || ''),
+        fulfilledBy: msg.fulfilledBy ? String(msg.fulfilledBy) : undefined,
+      }]
+    })),
 
-  setMessages: (messages) => set({ messages }),
+  setMessages: (messages) => set({
+    messages: messages.map(m => ({
+      ...m,
+      content: String(m.content || ''),
+      fulfilledBy: m.fulfilledBy ? String(m.fulfilledBy) : undefined,
+    }))
+  }),
 
   // Append a streaming token to the last assistant message matching requestId
   appendStreamToken: (requestId, token) =>
@@ -261,19 +271,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       const idx = messages.findIndex(
         (m) => m.role === 'assistant' && m.id === requestId,
       );
+      // Ensure token is always a string
+      const safeToken = String(token || '');
+
       if (idx === -1) {
         // First token — create the message
         messages.push({
           id: requestId,
           role: 'assistant',
-          content: token,
+          content: safeToken,
           timestamp: Date.now(),
           streaming: true,
         });
       } else {
         messages[idx] = {
           ...messages[idx],
-          content: messages[idx].content + token,
+          content: String(messages[idx].content || '') + safeToken,
         };
       }
       return { messages };
@@ -283,7 +296,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => {
       const messages = s.messages.map((m) =>
         m.id === requestId
-          ? { ...m, streaming: false, tokensGenerated, durationMs, fulfilledBy }
+          ? {
+              ...m,
+              streaming: false,
+              tokensGenerated,
+              durationMs,
+              fulfilledBy: fulfilledBy ? String(fulfilledBy) : ''
+            }
           : m,
       );
       return { messages, isGenerating: false, currentRequestId: null };
@@ -291,7 +310,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setGenerating: (v) => set({ isGenerating: v }),
   setCurrentRequestId: (id) => set({ currentRequestId: id }),
-  setQueueStatus: (position, length) => set({ queuePosition: position, queueLength: length }),
   clearMessages: () => set({ messages: [] }),
 
   // Save current chat to history

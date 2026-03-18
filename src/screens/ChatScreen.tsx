@@ -44,7 +44,6 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
     assignedProviderId, setAssignedProviderId,
     addMessage, appendStreamToken, finaliseMessage,
     setGenerating, setCurrentRequestId,
-    queuePosition, queueLength, setQueueStatus,
     modelLoaded, modelPath, modelDownloaded,
     setModelLoaded, setModelLoading,
     userProfile,
@@ -72,10 +71,8 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
   useEffect(() => {
     // User mode callbacks (receiving responses) - use store directly to avoid stale closures
     relayClient.onStreamToken = (requestId, token) => {
-      const { appendStreamToken, setQueueStatus } = useAppStore.getState();
+      const { appendStreamToken } = useAppStore.getState();
       appendStreamToken(requestId, token);
-      // Clear queue status when streaming starts
-      setQueueStatus(null, null);
     };
 
     relayClient.onStreamDone = (requestId, tokensGenerated, durationMs, providerName) => {
@@ -118,7 +115,7 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
     };
 
     relayClient.onInferenceError = (requestId, code, message) => {
-      const { addLog, messages, appendStreamToken, finaliseMessage, setGenerating, setCurrentRequestId, setQueueStatus } = useAppStore.getState();
+      const { addLog, messages, appendStreamToken, finaliseMessage, setGenerating, setCurrentRequestId } = useAppStore.getState();
       addLog(`❌ Inference failed: ${message}`);
 
       // Find and finalize the message with error (only if message exists)
@@ -130,7 +127,6 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
 
       setGenerating(false);
       setCurrentRequestId(null);
-      setQueueStatus(null, null); // Clear queue status on error
 
       // Show elegant error toast
       Toast.show({
@@ -142,20 +138,7 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
       });
     };
 
-    relayClient.onQueueStatus = (requestId, queuePosition, queueLength) => {
-      const { addLog, setQueueStatus } = useAppStore.getState();
-      addLog(`📋 Queue position ${queuePosition} of ${queueLength}`);
-      setQueueStatus(queuePosition, queueLength);
-    };
-
-    relayClient.onReadyToProcess = (requestId) => {
-      const { addLog, setQueueStatus } = useAppStore.getState();
-      addLog(`📤 Provider ready - retrying WebRTC connection`);
-      // Clear queue status (we're being processed now)
-      setQueueStatus(null, null);
-      // Retry the request (will initiate new WebRTC connection)
-      relayClient.retryInferenceRequest(requestId);
-    };
+    // Queue handlers removed - using simple failover instead
 
     // NOTE: Provider mode callbacks (onInferenceRequest, onCancelRequest) are set up globally in App.tsx
     // We don't override them here to keep them active even when not on ChatScreen
@@ -537,11 +520,11 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
 
     // Return minimal view if nothing to display
     if (!displayContent && !thinkingContent) {
-      return <View key={item.id} style={{ height: 1 }} />;
+      return null;
     }
 
     return (
-      <View>
+      <View key={String(item.id)}>
         {/* Show thinking only while streaming and no actual response yet */}
         {!isUser && thinkingContent && item.streaming && !displayContent && (
           <View style={styles.thinkingInline}>
@@ -628,7 +611,15 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
           </View>
 
           <View style={styles.headerRight}>
-            <TouchableOpacity onPress={() => setShowNodeInfo(true)} style={styles.nodeChip}>
+            <TouchableOpacity
+              onPress={() => {
+                console.log('[ChatScreen] Node chip pressed');
+                addLog('Node info popup opening');
+                setShowNodeInfo(true);
+              }}
+              style={styles.nodeChip}
+              activeOpacity={0.7}
+            >
               <View style={[styles.nodeDot, (connected && providerModeEnabled) ? styles.nodeDotGreen : styles.nodeDotRed]} />
               <Text style={styles.nodeChipText}>Node</Text>
               <Icon name="terminal" size={14} color={colors.text.primary} />
@@ -676,30 +667,6 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
           )}
         </View>
 
-        {/* Queue Status Bar */}
-        {queuePosition !== null && queueLength !== null && !useLocalModel && (
-          <View style={styles.queueBar}>
-            <View style={styles.queueContent}>
-              <Icon name="clock" size={16} color={colors.status.info} />
-              <View style={styles.queueTextContainer}>
-                <Text style={styles.queueTitle}>Due to high demand, you're in the queue</Text>
-                <Text style={styles.queuePosition}>
-                  Position {queuePosition} of {queueLength}
-                </Text>
-              </View>
-            </View>
-            <View style={styles.queueProgressContainer}>
-              <View style={styles.queueProgressBar}>
-                <View
-                  style={[
-                    styles.queueProgressFill,
-                    { width: `${((queueLength - queuePosition + 1) / queueLength) * 100}%` }
-                  ]}
-                />
-              </View>
-            </View>
-          </View>
-        )}
 
         {/* Live Metrics Bar */}
         {liveMetrics && useLocalModel && (
@@ -734,7 +701,7 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
         <FlatList
           ref={flatListRef}
           data={messages}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item, index) => item?.id ? String(item.id) : `msg-${index}`}
           renderItem={renderMessage}
           contentContainerStyle={styles.messageList}
           ListEmptyComponent={

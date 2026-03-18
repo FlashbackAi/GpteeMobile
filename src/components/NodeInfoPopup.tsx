@@ -38,6 +38,8 @@ export const NodeInfoPopup: React.FC<Props> = ({
   const [providerPings, setProviderPings] = useState<Map<string, ProviderPingStatus>>(new Map());
 
   useEffect(() => {
+    console.log('[NodeInfoPopup] Visibility changed:', visible, 'Providers:', providers.length);
+
     if (!visible) {
       // Reset pings when closed
       setProviderPings(new Map());

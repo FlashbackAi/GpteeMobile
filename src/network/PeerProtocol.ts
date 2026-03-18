@@ -14,8 +14,6 @@ export type MessageType =
   | 'pong'
   | 'provider_failover'
   | 'inference_error'
-  | 'queue_status'
-  | 'ready_to_process'
   | 'webrtc_offer'
   | 'webrtc_answer'
   | 'webrtc_ice_candidate';
@@ -150,19 +148,6 @@ export interface InferenceErrorMessage extends BaseMessage {
   message: string;
 }
 
-export interface QueueStatusMessage extends BaseMessage {
-  type: 'queue_status';
-  requestId: string;
-  queuePosition: number; // Position in queue (1 = next, 2 = after next, etc.)
-  queueLength: number; // Total number of requests in queue
-  estimatedWaitTimeMs?: number; // Optional estimated wait time
-}
-
-export interface ReadyToProcessMessage extends BaseMessage {
-  type: 'ready_to_process';
-  requestId: string;
-}
-
 export type GPTeeMessage =
   | RegisterMessage
   | ProviderListMessage
@@ -175,8 +160,6 @@ export type GPTeeMessage =
   | ErrorMessage
   | ProviderFailoverMessage
   | InferenceErrorMessage
-  | QueueStatusMessage
-  | ReadyToProcessMessage
   | WebRTCOfferMessage
   | WebRTCAnswerMessage
   | WebRTCIceCandidateMessage;
