@@ -316,6 +316,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       if (idx === -1) {
         // First token — create the message
+        console.log(`[appStore] 📝 Creating new message for ${requestId.substring(0, 8)}, first token: "${safeToken}"`);
         messages.push({
           id: requestId,
           role: 'assistant',
@@ -324,10 +325,17 @@ export const useAppStore = create<AppState>((set, get) => ({
           streaming: true,
         });
       } else {
+        const oldLength = messages[idx].content?.length || 0;
         messages[idx] = {
           ...messages[idx],
           content: String(messages[idx].content || '') + safeToken,
         };
+        const newLength = messages[idx].content?.length || 0;
+
+        // Log every 100 chars
+        if (newLength > 0 && newLength % 100 < safeToken.length) {
+          console.log(`[appStore] 📝 Message ${requestId.substring(0, 8)} now has ${newLength} chars`);
+        }
       }
       return { messages };
     }),

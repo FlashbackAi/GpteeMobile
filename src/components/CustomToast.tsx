@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import { colors } from '../theme/colors';
+import { colors, fonts } from '../theme/colors';
 
 interface ToastProps {
   text1?: string;
@@ -64,12 +64,13 @@ const styles = StyleSheet.create({
   },
   text1: {
     fontSize: 14,
-    fontWeight: '600',
     color: colors.text.primary,
     marginBottom: 2,
+    fontFamily: fonts.regular,
   },
   text2: {
     fontSize: 12,
     color: colors.text.secondary,
+    fontFamily: fonts.regular,
   },
 });

@@ -10,7 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import { colors } from '../theme/colors';
+import { colors, fonts } from '../theme/colors';
 import { generateGameName } from '../utils/nameGenerator';
 import { UserProfile } from '../store/appStore';
 
@@ -233,28 +233,30 @@ const styles = StyleSheet.create({
   },
   logo: {
     fontSize: 48,
-    fontWeight: '800',
     color: colors.accent.primary,
     letterSpacing: -1,
+    fontFamily: fonts.bold,
   },
   tagline: {
     fontSize: 16,
     color: colors.text.secondary,
     marginTop: 8,
+    fontFamily: fonts.regular,
   },
   section: {
     marginBottom: 32,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
     color: colors.text.primary,
     marginBottom: 4,
+    fontFamily: fonts.regular,
   },
   sectionSubtitle: {
     fontSize: 13,
     color: colors.text.tertiary,
     marginBottom: 16,
+    fontFamily: fonts.regular,
   },
   generatorCard: {
     backgroundColor: colors.terminal.background,
@@ -266,10 +268,10 @@ const styles = StyleSheet.create({
   },
   generatedName: {
     fontSize: 24,
-    fontWeight: '700',
     color: colors.accent.primary,
     textAlign: 'center',
     marginBottom: 16,
+    fontFamily: fonts.regular,
   },
   generatorButtons: {
     flexDirection: 'row',
@@ -281,13 +283,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: colors.terminal.blueDim,
+    borderColor: colors.terminal.greenDim,
   },
   regenerateButtonText: {
     fontSize: 14,
-    fontWeight: '600',
     color: colors.text.primary,
     textAlign: 'center',
+    fontFamily: fonts.regular,
   },
   useButton: {
     flex: 1,
@@ -297,15 +299,16 @@ const styles = StyleSheet.create({
   },
   useButtonText: {
     fontSize: 14,
-    fontWeight: '600',
     color: colors.button.primaryText,
     textAlign: 'center',
+    fontFamily: fonts.regular,
   },
   orText: {
     fontSize: 13,
     color: colors.text.tertiary,
     textAlign: 'center',
     marginBottom: 12,
+    fontFamily: fonts.regular,
   },
   input: {
     backgroundColor: colors.input.background,
@@ -316,6 +319,7 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
     borderWidth: 1,
     borderColor: colors.terminal.greenDim,
+    fontFamily: fonts.regular,
   },
   genderOptions: {
     gap: 8,
@@ -336,10 +340,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.text.primary,
     textAlign: 'center',
+    fontFamily: fonts.regular,
   },
   genderOptionTextSelected: {
     color: colors.button.primaryText,
-    fontWeight: '600',
+    fontFamily: fonts.regular,
   },
   dateRow: {
     flexDirection: 'row',
@@ -356,6 +361,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.input.border,
     textAlign: 'center',
+    fontFamily: fonts.regular,
   },
   dayInput: {
     flex: 1,
@@ -369,11 +375,13 @@ const styles = StyleSheet.create({
   dateSeparator: {
     fontSize: 18,
     color: colors.text.tertiary,
+    fontFamily: fonts.regular,
   },
   errorText: {
     fontSize: 12,
     color: colors.status.error,
     marginTop: 8,
+    fontFamily: fonts.regular,
   },
   privacyNote: {
     backgroundColor: 'rgba(59, 130, 246, 0.1)',
@@ -386,6 +394,7 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     textAlign: 'center',
     lineHeight: 18,
+    fontFamily: fonts.regular,
   },
   checkboxContainer: {
     flexDirection: 'row',
@@ -414,6 +423,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.text.secondary,
     lineHeight: 20,
+    fontFamily: fonts.regular,
   },
   footer: {
     padding: 24,
@@ -429,8 +439,8 @@ const styles = StyleSheet.create({
   },
   continueButtonText: {
     fontSize: 16,
-    fontWeight: '700',
     color: colors.button.primaryText,
     textAlign: 'center',
+    fontFamily: fonts.regular,
   },
 });

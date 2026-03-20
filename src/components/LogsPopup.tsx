@@ -9,7 +9,7 @@ import {
   Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import { colors } from '../theme/colors';
+import { colors, fonts } from '../theme/colors';
 
 interface Props {
   visible: boolean;
@@ -115,8 +115,8 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 20,
-    fontWeight: '700',
     color: colors.text.primary,
+    fontFamily: fonts.regular,
   },
   clearButton: {
     padding: 8,
@@ -147,16 +147,16 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    fontWeight: '600',
     color: colors.text.tertiary,
     marginTop: 16,
     marginBottom: 8,
+    fontFamily: fonts.regular,
   },
   emptySubtext: {
     fontSize: 13,
     color: colors.text.disabled,
     textAlign: 'center',
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontFamily: fonts.regular,
   },
   logLine: {
     flexDirection: 'row',
@@ -166,14 +166,13 @@ const styles = StyleSheet.create({
   logPrompt: {
     fontSize: 11,
     color: colors.terminal.green,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontFamily: fonts.regular,
     marginRight: 8,
-    fontWeight: '700',
   },
   logText: {
     fontSize: 11,
     color: colors.text.primary,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontFamily: fonts.regular,
     flex: 1,
   },
   terminalCursor: {

@@ -9,7 +9,7 @@ import {
   ScrollView,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import { colors } from '../theme/colors';
+import { colors, fonts } from '../theme/colors';
 import { ProviderInfo } from '../network/PeerProtocol';
 
 interface Props {
@@ -229,10 +229,9 @@ const styles = StyleSheet.create({
   terminalTitle: {
     fontSize: 12,
     color: colors.terminal.green,
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     flex: 1,
     textAlign: 'center',
-    fontWeight: '600',
   },
   closeButton: {
     padding: 4,
@@ -256,10 +255,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   tableHeaderText: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     fontSize: 12,
     color: '#888',
-    fontWeight: '700',
     letterSpacing: 0.5,
   },
   rowContainer: {
@@ -301,10 +299,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#ff5f56',
   },
   nodeNameText: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     fontSize: 15,
     color: '#e0e0e0',
-    fontWeight: '600',
     letterSpacing: 0.3,
     flex: 1,
   },
@@ -321,10 +318,9 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   ownNodeBadgeText: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     color: '#27c93f',
     fontSize: 10,
-    fontWeight: '700',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
@@ -334,30 +330,27 @@ const styles = StyleSheet.create({
     minWidth: 80,
   },
   pingText: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     fontSize: 15,
-    fontWeight: '700',
     letterSpacing: 0.5,
   },
   mutedText: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     fontSize: 15,
     color: '#666',
-    fontWeight: '600',
   },
   emptyState: {
     alignItems: 'center',
     paddingVertical: 60,
   },
   emptyText: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     fontSize: 15,
     color: '#e0e0e0',
     marginBottom: 10,
-    fontWeight: '600',
   },
   emptySubtext: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     fontSize: 12,
     color: '#666',
   },
@@ -369,7 +362,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.terminal.greenDim,
   },
   footerText: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     fontSize: 11,
     color: '#777',
     textAlign: 'center',

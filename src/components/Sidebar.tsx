@@ -10,7 +10,7 @@ import {
   TextInput,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import { colors } from '../theme/colors';
+import { colors, fonts } from '../theme/colors';
 import { ChatHistory, useAppStore } from '../store/appStore';
 
 interface Props {
@@ -125,7 +125,8 @@ export const Sidebar: React.FC<Props> = ({
                     onClose();
                   }}
                 >
-                  <Icon name="plus" size={16} color={colors.terminal.green} />
+                  <Icon name="plus" size={14} color={colors.terminal.green} />
+                  <Text style={styles.newChatButtonText}>new chat</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -313,10 +314,10 @@ const styles = StyleSheet.create({
   },
   logo: {
     fontSize: 28,
-    fontWeight: '800',
+    // fontWeight: '800',
     color: colors.accent.primary,
     letterSpacing: -0.5,
-    fontFamily: 'spacegroteskbold',
+    fontFamily: fonts.bold,
   },
   homeIconButton: {
     padding: 8,
@@ -330,6 +331,7 @@ const styles = StyleSheet.create({
     color: colors.text.tertiary,
     marginTop: 4,
     letterSpacing: 0.5,
+    fontFamily: fonts.regular,
   },
   historySection: {
     flex: 1,
@@ -344,19 +346,25 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 12,
-    fontWeight: '700',
     color: colors.text.tertiary,
     letterSpacing: 0.5,
+    fontFamily: fonts.regular,
   },
   newChatButton: {
-    width: 28,
-    height: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 6,
     backgroundColor: colors.terminal.background,
     borderWidth: 1,
     borderColor: colors.terminal.greenDim,
-    justifyContent: 'center',
-    alignItems: 'center',
+  },
+  newChatButtonText: {
+    fontSize: 11,
+    color: colors.terminal.green,
+    fontFamily: fonts.regular,
   },
   historyList: {
     flex: 1,
@@ -371,6 +379,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.text.disabled,
     marginTop: 12,
+    fontFamily: fonts.regular,
   },
   chatItemWrapper: {
     position: 'relative',
@@ -402,14 +411,15 @@ const styles = StyleSheet.create({
   },
   chatItemText: {
     fontSize: 14,
-    fontWeight: '500',
     color: colors.text.primary,
     flex: 1,
+    fontFamily: fonts.regular,
   },
   chatItemDate: {
     fontSize: 11,
     color: colors.text.disabled,
     marginLeft: 26,
+    fontFamily: fonts.regular,
   },
   chatItemActions: {
     flexDirection: 'row',
@@ -444,8 +454,8 @@ const styles = StyleSheet.create({
   },
   menuItemText: {
     fontSize: 14,
-    fontWeight: '500',
     color: colors.text.primary,
+    fontFamily: fonts.regular,
   },
   menuItemTextDanger: {
     color: colors.status.error,
@@ -472,15 +482,16 @@ const styles = StyleSheet.create({
   },
   dialogTitle: {
     fontSize: 20,
-    fontWeight: '700',
     color: colors.text.primary,
     marginBottom: 16,
+    fontFamily: fonts.regular,
   },
   dialogMessage: {
     fontSize: 14,
     color: colors.text.secondary,
     marginBottom: 24,
     lineHeight: 20,
+    fontFamily: fonts.regular,
   },
   dialogInput: {
     backgroundColor: colors.input.background,
@@ -492,6 +503,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     marginBottom: 24,
+    fontFamily: fonts.regular,
   },
   dialogButtons: {
     flexDirection: 'row',
@@ -518,13 +530,13 @@ const styles = StyleSheet.create({
   },
   dialogButtonTextSecondary: {
     fontSize: 14,
-    fontWeight: '600',
     color: colors.text.primary,
+    fontFamily: fonts.regular,
   },
   dialogButtonTextPrimary: {
     fontSize: 14,
-    fontWeight: '600',
     color: colors.button.primaryText,
+    fontFamily: fonts.regular,
   },
   closeButton: {
     flexDirection: 'row',
@@ -539,7 +551,7 @@ const styles = StyleSheet.create({
   },
   closeButtonText: {
     fontSize: 16,
-    fontWeight: '600',
     color: colors.text.primary,
+    fontFamily: fonts.regular,
   },
 });

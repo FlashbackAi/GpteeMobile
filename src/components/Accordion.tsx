@@ -9,7 +9,7 @@ import {
   UIManager,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
-import { colors } from '../theme/colors';
+import { colors, fonts } from '../theme/colors';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -95,9 +95,9 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 16,
-    fontWeight: '600',
     color: colors.text.primary,
     flex: 1,
+    fontFamily: fonts.regular,
   },
   content: {
     paddingHorizontal: 16,

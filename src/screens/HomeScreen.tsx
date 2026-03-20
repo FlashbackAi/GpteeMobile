@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import Icon from 'react-native-vector-icons/Feather';
 import Toast from 'react-native-toast-message';
 import DeviceInfo from 'react-native-device-info';
 import { useAppStore } from '../store/appStore';
-import { colors } from '../theme/colors';
+import { colors, fonts } from '../theme/colors';
 import { NodeInfoPopup } from '../components/NodeInfoPopup';
 import { LogsPopup } from '../components/LogsPopup';
 import { Sidebar } from '../components/Sidebar';
@@ -46,6 +46,42 @@ export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
   const [showNodeInfo, setShowNodeInfo] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
+  const [greeting, setGreeting] = useState('');
+
+  // Get time-based greeting - memoized for efficiency
+  const getGreeting = useCallback(() => {
+    const hour = new Date().getHours();
+    const displayName = userProfile?.displayName || 'there';
+
+    if (hour >= 5 && hour < 12) {
+      return `good morning, ${displayName}!`;
+    } else if (hour >= 12 && hour < 17) {
+      return `good afternoon, ${displayName}!`;
+    } else if (hour >= 17 && hour < 21) {
+      return `good evening, ${displayName}!`;
+    } else {
+      // Late night/early morning - funky greetings
+      const funkyGreetings = [
+        `hey there, ${displayName}!`,
+        `glad to see you, ${displayName}!`,
+        `welcome back, ${displayName}!`,
+        `what's up, ${displayName}!`,
+        `hey ${displayName}, ready to chat?`,
+      ];
+      return funkyGreetings[Math.floor(Math.random() * funkyGreetings.length)];
+    }
+  }, [userProfile?.displayName]);
+
+  // Update greeting on mount and when user profile changes
+  useEffect(() => {
+    setGreeting(getGreeting());
+    // Update greeting every minute to stay current
+    const interval = setInterval(() => {
+      setGreeting(getGreeting());
+    }, 60000); // 60 seconds
+
+    return () => clearInterval(interval);
+  }, [getGreeting]);
 
   // Handle provider mode toggle with battery check
   const handleProviderToggle = async (value: boolean) => {
@@ -156,6 +192,8 @@ export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
 
         {/* Main content */}
         <View style={styles.content}>
+          <Text style={styles.greeting}>{greeting}</Text>
+          <Text style={styles.welcome}>welcome to</Text>
           <Text style={styles.description}>
             peer-to-peer ai inference network.{'\n\n'}
             chat using your local model or connect to online providers.
@@ -269,8 +307,8 @@ const styles = StyleSheet.create({
   },
   nodeChipText: {
     fontSize: 12,
-    fontWeight: '600',
     color: colors.text.primary,
+    fontFamily: fonts.regular,
   },
   nodeDot: {
     width: 6,
@@ -286,12 +324,12 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: colors.terminal.background,
     borderWidth: 1,
-    borderColor: colors.terminal.blueDim,
+    borderColor: colors.terminal.greenDim,
   },
   logsChipText: {
     fontSize: 12,
-    fontWeight: '600',
     color: colors.text.primary,
+    fontFamily: fonts.regular,
   },
   profileButton: {
     padding: 8,
@@ -305,15 +343,16 @@ const styles = StyleSheet.create({
   },
   logo: {
     fontSize: 48,
-    fontWeight: '800',
     color: colors.accent.primary,
     letterSpacing: -1,
+    fontFamily: fonts.bold,
   },
   tagline: {
     fontSize: 14,
     color: colors.text.tertiary,
     marginTop: 4,
     letterSpacing: 1,
+    fontFamily: fonts.regular,
   },
   statusRow: {
     flexDirection: 'row',
@@ -331,21 +370,39 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 12,
     color: colors.text.tertiary,
+    fontFamily: fonts.regular,
   },
   statusTextLink: {
     color: colors.accent.primary,
-    fontWeight: '600',
+    fontFamily: fonts.regular,
   },
   content: {
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: 20,
   },
+  greeting: {
+    fontSize: 20,
+    color: colors.accent.primary,
+    textAlign: 'center',
+    marginBottom: 12,
+    fontFamily: fonts.bold,
+    letterSpacing: 0.3,
+  },
+  welcome: {
+    fontSize: 18,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    marginBottom: 16,
+    fontFamily: fonts.regular,
+    letterSpacing: 0.5,
+  },
   description: {
     fontSize: 16,
     lineHeight: 26,
     color: colors.text.secondary,
     textAlign: 'center',
+    fontFamily: fonts.regular,
   },
   bottomContainer: {
     paddingBottom: 40,
@@ -358,14 +415,15 @@ const styles = StyleSheet.create({
   },
   startButtonText: {
     fontSize: 18,
-    fontWeight: '700',
     color: colors.button.primaryText,
     textAlign: 'center',
+    fontFamily: fonts.regular,
   },
   footer: {
     textAlign: 'center',
     fontSize: 11,
     color: colors.text.tertiary,
+    fontFamily: fonts.regular,
   },
   warningBox: {
     backgroundColor: colors.background.card,
@@ -381,6 +439,7 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     textAlign: 'center',
     lineHeight: 20,
+    fontFamily: fonts.regular,
   },
   providerSection: {
     backgroundColor: colors.terminal.background,
@@ -401,14 +460,15 @@ const styles = StyleSheet.create({
   },
   providerTitle: {
     fontSize: 16,
-    fontWeight: '600',
     color: colors.text.primary,
     marginBottom: 4,
+    fontFamily: fonts.regular,
   },
   providerDesc: {
     fontSize: 13,
     color: colors.text.tertiary,
     lineHeight: 18,
+    fontFamily: fonts.regular,
   },
   providerActiveInfo: {
     marginTop: 12,
@@ -420,5 +480,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.status.success,
     textAlign: 'center',
+    fontFamily: fonts.regular,
   },
 });

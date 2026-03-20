@@ -17,7 +17,7 @@ import {
   ModelDownloadManager,
   AVAILABLE_MODELS,
 } from '../services/ModelDownloadManager';
-import { colors } from '../theme/colors';
+import { colors, fonts } from '../theme/colors';
 import { Accordion } from '../components/Accordion';
 
 export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
@@ -215,8 +215,163 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {/* model management */}
+        <Accordion title="model management" icon="download" defaultExpanded={true}>
+          <View style={styles.accordionContent}>
+
+          {/* Storage Path */}
+          <View style={styles.styledBoxContainer}>
+            <View style={styles.styledBoxLabel}>
+              <Text style={styles.styledBoxLabelText}>storage path</Text>
+            </View>
+            <View style={styles.styledBox}>
+              <Text style={styles.styledBoxValue} numberOfLines={2}>
+                {modelManager.getModelDirectory()}
+              </Text>
+            </View>
+          </View>
+
+          {/* Model Info Card */}
+          <View style={styles.modelTerminalCard}>
+            <View style={styles.modelHeader}>
+              <View style={styles.terminalPrompt}>
+                <Text style={styles.terminalPromptText}>$</Text>
+              </View>
+              <Text style={styles.modelTerminalName}>{AVAILABLE_MODELS[0].name}</Text>
+            </View>
+
+            <View style={styles.modelMetaRow}>
+              <Text style={styles.modelMetaLabel}>type:</Text>
+              <Text style={styles.modelMetaValue}>quantized</Text>
+            </View>
+
+            <View style={styles.modelMetaRow}>
+              <Text style={styles.modelMetaLabel}>desc:</Text>
+              <Text style={styles.modelMetaValue}>{AVAILABLE_MODELS[0].description}</Text>
+            </View>
+
+            {modelSize > 0 && (
+              <View style={styles.modelMetaRow}>
+                <Text style={styles.modelMetaLabel}>size:</Text>
+                <Text style={styles.modelMetaValue}>{HardwareMonitor.formatBytes(modelSize)}</Text>
+              </View>
+            )}
+
+            {/* Download Progress */}
+            {modelDownloading && (
+              <View style={styles.terminalProgressContainer}>
+                <View style={styles.terminalProgressBar}>
+                  <View
+                    style={[
+                      styles.terminalProgressFill,
+                      { width: `${modelDownloadProgress}%` },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.terminalProgressText}>
+                  [{modelDownloadProgress.toFixed(1)}%] downloading...
+                </Text>
+              </View>
+            )}
+
+            {/* Status Badge */}
+            {modelDownloaded && !modelDownloading && (
+              <View style={styles.modelStatusRow}>
+                <Text style={styles.modelStatusLabel}>status:</Text>
+                <Text style={styles.modelStatusReady}>● ready</Text>
+              </View>
+            )}
+
+            {/* Action Buttons */}
+            <View style={styles.modelActions}>
+              {!modelDownloaded && !modelDownloading && (
+                <TouchableOpacity
+                  style={styles.terminalButton}
+                  onPress={handleDownloadModel}>
+                  <Text style={styles.terminalButtonText}>[ download ]</Text>
+                </TouchableOpacity>
+              )}
+
+              {modelDownloaded && !modelDownloading && (
+                <TouchableOpacity
+                  style={styles.terminalButtonDanger}
+                  onPress={handleDeleteModel}>
+                  <Text style={styles.terminalButtonDangerText}>[ delete ]</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </View>
+        </Accordion>
+
+        {/* Power & Provider */}
+        <Accordion title="power & provider" icon="battery-charging" defaultExpanded={true}>
+          <View style={styles.accordionContent}>
+            <View style={styles.styledBoxContainer}>
+              <View style={styles.styledBoxLabel}>
+                <Text style={styles.styledBoxLabelText}>provider mode</Text>
+              </View>
+              <View style={styles.styledBox}>
+                <View style={styles.switchRow}>
+                  <Text style={styles.styledBoxValue}>{providerModeEnabled ? 'enabled' : 'disabled'}</Text>
+                  <Switch
+                    value={providerModeEnabled}
+                    onValueChange={setProviderModeEnabled}
+                    trackColor={{ false: colors.input.border, true: colors.terminal.green }}
+                    thumbColor={colors.terminal.prompt}
+                    disabled={!modelDownloaded || batteryLevel < batteryThreshold}
+                  />
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.styledBoxContainer}>
+              <View style={styles.styledBoxLabel}>
+                <Text style={styles.styledBoxLabelText}>battery</Text>
+              </View>
+              <View style={styles.styledBox}>
+                <Text style={[
+                  styles.styledBoxValue,
+                  { color: batteryLevel < batteryThreshold ? colors.status.warning : colors.terminal.green }
+                ]}>
+                  {batteryLevel}%
+                </Text>
+                <Text style={styles.styledBoxSubtext}>
+                  min threshold: {batteryThreshold}%
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.styledBoxContainer}>
+              <View style={styles.styledBoxLabel}>
+                <Text style={styles.styledBoxLabelText}>battery threshold</Text>
+              </View>
+              <View style={styles.styledBox}>
+                <View style={styles.thresholdButtons}>
+                  {[10, 20, 30, 40, 50].map(value => (
+                    <TouchableOpacity
+                      key={value}
+                      style={[
+                        styles.thresholdButton,
+                        batteryThreshold === value && styles.thresholdButtonActive
+                      ]}
+                      onPress={() => handleBatteryThresholdChange(value)}>
+                      <Text style={[
+                        styles.thresholdButtonText,
+                        batteryThreshold === value && styles.thresholdButtonTextActive
+                      ]}>
+                        {value}%
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </View>
+        </Accordion>
+
         {/* Profile Section */}
-        <Accordion title="profile" icon="user" defaultExpanded={true}>
+        <Accordion title="profile" icon="user" defaultExpanded={false}>
           <View style={styles.accordionContent}>
             <View style={styles.styledBoxContainer}>
               <View style={styles.styledBoxLabel}>
@@ -448,161 +603,6 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           )}
           </View>
         </Accordion>
-
-        {/* Power & Provider */}
-        <Accordion title="power & provider" icon="battery-charging" defaultExpanded={false}>
-          <View style={styles.accordionContent}>
-            <View style={styles.styledBoxContainer}>
-              <View style={styles.styledBoxLabel}>
-                <Text style={styles.styledBoxLabelText}>provider mode</Text>
-              </View>
-              <View style={styles.styledBox}>
-                <View style={styles.switchRow}>
-                  <Text style={styles.styledBoxValue}>{providerModeEnabled ? 'enabled' : 'disabled'}</Text>
-                  <Switch
-                    value={providerModeEnabled}
-                    onValueChange={setProviderModeEnabled}
-                    trackColor={{ false: colors.input.border, true: colors.terminal.green }}
-                    thumbColor={colors.terminal.prompt}
-                    disabled={!modelDownloaded || batteryLevel < batteryThreshold}
-                  />
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.styledBoxContainer}>
-              <View style={styles.styledBoxLabel}>
-                <Text style={styles.styledBoxLabelText}>battery</Text>
-              </View>
-              <View style={styles.styledBox}>
-                <Text style={[
-                  styles.styledBoxValue,
-                  { color: batteryLevel < batteryThreshold ? colors.status.warning : colors.terminal.green }
-                ]}>
-                  {batteryLevel}%
-                </Text>
-                <Text style={styles.styledBoxSubtext}>
-                  min threshold: {batteryThreshold}%
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.styledBoxContainer}>
-              <View style={styles.styledBoxLabel}>
-                <Text style={styles.styledBoxLabelText}>battery threshold</Text>
-              </View>
-              <View style={styles.styledBox}>
-                <View style={styles.thresholdButtons}>
-                  {[10, 20, 30, 40, 50].map(value => (
-                    <TouchableOpacity
-                      key={value}
-                      style={[
-                        styles.thresholdButton,
-                        batteryThreshold === value && styles.thresholdButtonActive
-                      ]}
-                      onPress={() => handleBatteryThresholdChange(value)}>
-                      <Text style={[
-                        styles.thresholdButtonText,
-                        batteryThreshold === value && styles.thresholdButtonTextActive
-                      ]}>
-                        {value}%
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            </View>
-          </View>
-        </Accordion>
-
-        {/* model management */}
-        <Accordion title="model management" icon="download" defaultExpanded={false}>
-          <View style={styles.accordionContent}>
-
-          {/* Storage Path */}
-          <View style={styles.styledBoxContainer}>
-            <View style={styles.styledBoxLabel}>
-              <Text style={styles.styledBoxLabelText}>storage path</Text>
-            </View>
-            <View style={styles.styledBox}>
-              <Text style={styles.styledBoxValue} numberOfLines={2}>
-                {modelManager.getModelDirectory()}
-              </Text>
-            </View>
-          </View>
-
-          {/* Model Info Card */}
-          <View style={styles.modelTerminalCard}>
-            <View style={styles.modelHeader}>
-              <View style={styles.terminalPrompt}>
-                <Text style={styles.terminalPromptText}>$</Text>
-              </View>
-              <Text style={styles.modelTerminalName}>{AVAILABLE_MODELS[0].name}</Text>
-            </View>
-
-            <View style={styles.modelMetaRow}>
-              <Text style={styles.modelMetaLabel}>type:</Text>
-              <Text style={styles.modelMetaValue}>quantized</Text>
-            </View>
-
-            <View style={styles.modelMetaRow}>
-              <Text style={styles.modelMetaLabel}>desc:</Text>
-              <Text style={styles.modelMetaValue}>{AVAILABLE_MODELS[0].description}</Text>
-            </View>
-
-            {modelSize > 0 && (
-              <View style={styles.modelMetaRow}>
-                <Text style={styles.modelMetaLabel}>size:</Text>
-                <Text style={styles.modelMetaValue}>{HardwareMonitor.formatBytes(modelSize)}</Text>
-              </View>
-            )}
-
-            {/* Download Progress */}
-            {modelDownloading && (
-              <View style={styles.terminalProgressContainer}>
-                <View style={styles.terminalProgressBar}>
-                  <View
-                    style={[
-                      styles.terminalProgressFill,
-                      { width: `${modelDownloadProgress}%` },
-                    ]}
-                  />
-                </View>
-                <Text style={styles.terminalProgressText}>
-                  [{modelDownloadProgress.toFixed(1)}%] downloading...
-                </Text>
-              </View>
-            )}
-
-            {/* Status Badge */}
-            {modelDownloaded && !modelDownloading && (
-              <View style={styles.modelStatusRow}>
-                <Text style={styles.modelStatusLabel}>status:</Text>
-                <Text style={styles.modelStatusReady}>● ready</Text>
-              </View>
-            )}
-
-            {/* Action Buttons */}
-            <View style={styles.modelActions}>
-              {!modelDownloaded && !modelDownloading && (
-                <TouchableOpacity
-                  style={styles.terminalButton}
-                  onPress={handleDownloadModel}>
-                  <Text style={styles.terminalButtonText}>[ download ]</Text>
-                </TouchableOpacity>
-              )}
-
-              {modelDownloaded && !modelDownloading && (
-                <TouchableOpacity
-                  style={styles.terminalButtonDanger}
-                  onPress={handleDeleteModel}>
-                  <Text style={styles.terminalButtonDangerText}>[ delete ]</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-        </View>
-        </Accordion>
       </ScrollView>
     </View>
   );
@@ -632,11 +632,12 @@ const styles = StyleSheet.create({
   backText: {
     color: colors.accent.primary,
     fontSize: 16,
+    fontFamily: fonts.regular,
   },
   title: {
     color: colors.text.primary,
     fontSize: 20,
-    fontWeight: '600',
+    fontFamily: fonts.regular,
   },
   scrollView: {
     flex: 1,
@@ -676,14 +677,15 @@ const styles = StyleSheet.create({
   },
   statValue: {
     fontSize: 24,
-    fontWeight: '700',
     color: colors.text.primary,
     marginBottom: 4,
+    fontFamily: fonts.regular,
   },
   statLabel: {
     fontSize: 12,
     color: colors.text.secondary,
     textAlign: 'center',
+    fontFamily: fonts.regular,
   },
   // Stats row layout (2 boxes per row)
   statsRow: {
@@ -705,21 +707,20 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: colors.terminal.blueDim,
+    borderColor: colors.terminal.greenDim,
     zIndex: 1,
   },
   statBoxLabelText: {
-    fontFamily: 'monospace',
-    color: colors.terminal.blue,
+    fontFamily: fonts.regular,
+    color: colors.terminal.green,
     fontSize: 9,
-    fontWeight: '700',
     letterSpacing: 0.8,
   },
   statBox: {
     backgroundColor: colors.terminal.background,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: colors.terminal.blueDim,
+    borderColor: colors.terminal.greenDim,
     padding: 12,
     paddingTop: 16,
     alignItems: 'center',
@@ -727,15 +728,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   statBoxValue: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     fontSize: 18,
-    fontWeight: '700',
-    color: colors.terminal.blue,
+    color: colors.terminal.green,
     letterSpacing: 0.5,
     marginBottom: 2,
   },
   statBoxUnit: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     fontSize: 10,
     color: colors.terminal.prompt,
     letterSpacing: 0.3,
@@ -758,10 +758,9 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   styledBoxLabelText: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     color: colors.terminal.green,
     fontSize: 10,
-    fontWeight: '700',
     letterSpacing: 0.8,
   },
   styledBox: {
@@ -773,13 +772,13 @@ const styles = StyleSheet.create({
     paddingTop: 20,
   },
   styledBoxValue: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     fontSize: 14,
     color: colors.terminal.green,
     letterSpacing: 0.3,
   },
   styledBoxSubtext: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     fontSize: 11,
     color: colors.terminal.prompt,
     marginTop: 4,
@@ -800,6 +799,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     marginBottom: 12,
+    fontFamily: fonts.regular,
   },
   infoRow: {
     flexDirection: 'row',
@@ -809,11 +809,13 @@ const styles = StyleSheet.create({
   infoLabel: {
     color: colors.text.tertiary,
     fontSize: 14,
+    fontFamily: fonts.regular,
   },
   infoValue: {
     color: colors.text.primary,
     fontSize: 14,
     fontWeight: '500',
+    fontFamily: fonts.regular,
   },
   warningText: {
     color: colors.status.warning,
@@ -831,16 +833,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 4,
+    fontFamily: fonts.regular,
   },
   modelDesc: {
     color: colors.text.tertiary,
     fontSize: 14,
     marginBottom: 8,
+    fontFamily: fonts.regular,
   },
   modelSize: {
     color: colors.text.disabled,
     fontSize: 12,
     marginBottom: 12,
+    fontFamily: fonts.regular,
   },
   progressContainer: {
     marginBottom: 12,
@@ -860,6 +865,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
     textAlign: 'center',
+    fontFamily: fonts.regular,
   },
   downloadedBadge: {
     backgroundColor: colors.background.tertiary,
@@ -873,6 +879,7 @@ const styles = StyleSheet.create({
     color: colors.status.success,
     fontSize: 12,
     fontWeight: '600',
+    fontFamily: fonts.regular,
   },
   buttonRow: {
     flexDirection: 'row',
@@ -889,6 +896,7 @@ const styles = StyleSheet.create({
     color: colors.button.primaryText,
     fontSize: 14,
     fontWeight: '600',
+    fontFamily: fonts.regular,
   },
   deleteButton: {
     flex: 1,
@@ -901,6 +909,7 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
     fontSize: 14,
     fontWeight: '600',
+    fontFamily: fonts.regular,
   },
   modelListItem: {
     backgroundColor: colors.background.card,
@@ -911,6 +920,7 @@ const styles = StyleSheet.create({
   modelListText: {
     color: colors.text.primary,
     fontSize: 14,
+    fontFamily: fonts.regular,
   },
   pathInfo: {
     backgroundColor: colors.background.card,
@@ -922,11 +932,12 @@ const styles = StyleSheet.create({
     color: colors.text.tertiary,
     fontSize: 12,
     marginBottom: 4,
+    fontFamily: fonts.regular,
   },
   pathText: {
     color: colors.text.primary,
     fontSize: 11,
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
   },
   memoryOverview: {
     flexDirection: 'row',
@@ -938,10 +949,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: colors.text.primary,
+    fontFamily: fonts.regular,
   },
   memoryPercent: {
     fontSize: 18,
     fontWeight: '700',
+    fontFamily: fonts.regular,
   },
   memoryBar: {
     height: 8,
@@ -964,11 +977,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginBottom: 4,
+    fontFamily: fonts.regular,
   },
   configHint: {
     color: colors.text.tertiary,
     fontSize: 12,
     marginBottom: 12,
+    fontFamily: fonts.regular,
   },
   thresholdButtons: {
     flexDirection: 'row',
@@ -987,16 +1002,18 @@ const styles = StyleSheet.create({
     borderColor: colors.terminal.greenDim,
   },
   thresholdButtonActive: {
-    backgroundColor: colors.terminal.blue,
-    borderColor: colors.terminal.blue,
+    backgroundColor: colors.terminal.green,
+    borderColor: colors.terminal.green,
   },
   thresholdButtonText: {
     color: colors.text.tertiary,
     fontSize: 14,
     fontWeight: '600',
+    fontFamily: fonts.regular,
   },
   thresholdButtonTextActive: {
     color: colors.background.primary,
+    fontFamily: fonts.regular,
   },
   // model management - Terminal Style
   modelTerminalCard: {
@@ -1023,15 +1040,13 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   terminalPromptText: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     fontSize: 14,
-    fontWeight: '700',
     color: colors.terminal.background,
   },
   modelTerminalName: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     fontSize: 14,
-    fontWeight: '700',
     color: colors.terminal.green,
     letterSpacing: 0.5,
   },
@@ -1041,13 +1056,13 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   modelMetaLabel: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     fontSize: 12,
     color: colors.terminal.prompt,
     minWidth: 50,
   },
   modelMetaValue: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     fontSize: 12,
     color: colors.terminal.green,
     flex: 1,
@@ -1059,15 +1074,14 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   modelStatusLabel: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     fontSize: 12,
     color: colors.terminal.prompt,
     minWidth: 50,
   },
   modelStatusReady: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     fontSize: 12,
-    fontWeight: '700',
     color: colors.terminal.green,
   },
   terminalProgressContainer: {
@@ -1080,14 +1094,14 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: colors.terminal.blueDim,
+    borderColor: colors.terminal.greenDim,
   },
   terminalProgressFill: {
     height: '100%',
-    backgroundColor: colors.terminal.blue,
+    backgroundColor: colors.terminal.green,
   },
   terminalProgressText: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     fontSize: 11,
     color: colors.terminal.prompt,
     letterSpacing: 0.5,
@@ -1108,9 +1122,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   terminalButtonText: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     fontSize: 13,
-    fontWeight: '700',
     color: colors.terminal.green,
     letterSpacing: 1,
   },
@@ -1124,9 +1137,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   terminalButtonDangerText: {
-    fontFamily: 'monospace',
+    fontFamily: fonts.regular,
     fontSize: 13,
-    fontWeight: '700',
     color: colors.status.error,
     letterSpacing: 1,
   },

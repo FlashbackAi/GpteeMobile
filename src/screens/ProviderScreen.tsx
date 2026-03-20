@@ -10,6 +10,7 @@ import { InferenceRequestMessage } from '../network/PeerProtocol';
 import { ModelDownloadManager, AVAILABLE_MODELS } from '../services/ModelDownloadManager';
 import { HardwareMonitor } from '../utils/HardwareMonitor';
 import ProviderService from '../services/ProviderService';
+import { colors as themeColors, fonts } from '../theme/colors';
 
 interface Props {
   onBack: () => void;
@@ -378,8 +379,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: C.border, gap: 12,
   },
   backBtn: { paddingRight: 8 },
-  backText: { color: C.cyan, fontSize: 14 },
-  headerTitle: { flex: 1, fontSize: 16, fontWeight: '700', color: C.text },
+  backText: { color: C.cyan, fontSize: 14, fontFamily: fonts.regular },
+  headerTitle: { flex: 1, fontSize: 16, color: C.text, fontFamily: fonts.regular },
   dot: { width: 8, height: 8, borderRadius: 4 },
   dotGreen: { backgroundColor: C.green },
   dotRed: { backgroundColor: C.red },
@@ -391,22 +392,22 @@ const styles = StyleSheet.create({
   },
   cardActive: { borderColor: C.cyan + '60' },
   cardLabel: {
-    fontSize: 10, fontWeight: '700', color: C.sub,
-    letterSpacing: 2, marginBottom: 10,
+    fontSize: 10, color: C.sub,
+    letterSpacing: 2, marginBottom: 10, fontFamily: fonts.regular,
   },
-  cardSub: { fontSize: 13, color: C.sub, marginTop: 2 },
+  cardSub: { fontSize: 13, color: C.sub, marginTop: 2, fontFamily: fonts.regular },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   flex1: { flex: 1 },
 
-  statusText: { fontSize: 14, color: C.text },
-  statusDot: { fontSize: 14 },
-  errorText: { fontSize: 13, color: C.red, marginBottom: 8 },
+  statusText: { fontSize: 14, color: C.text, fontFamily: fonts.regular },
+  statusDot: { fontSize: 14, fontFamily: fonts.regular },
+  errorText: { fontSize: 13, color: C.red, marginBottom: 8, fontFamily: fonts.regular },
   retryBtn: {
     alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6,
     backgroundColor: C.cyan + '20', borderRadius: 8,
     borderWidth: 1, borderColor: C.cyan + '50',
   },
-  retryText: { fontSize: 12, color: C.cyan, fontWeight: '600' },
+  retryText: { fontSize: 12, color: C.cyan, fontFamily: fonts.regular },
 
   statsRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
   statCard: {
@@ -414,16 +415,16 @@ const styles = StyleSheet.create({
     padding: 14, alignItems: 'center',
     borderWidth: 1, borderColor: C.border,
   },
-  statValue: { fontSize: 24, fontWeight: '700', color: C.text },
-  statValueCyan: { color: C.cyan },
-  statLabel: { fontSize: 11, color: C.sub, marginTop: 4 },
+  statValue: { fontSize: 24, color: C.text, fontFamily: fonts.regular },
+  statValueCyan: { color: C.cyan, fontFamily: fonts.regular },
+  statLabel: { fontSize: 11, color: C.sub, marginTop: 4, fontFamily: fonts.regular },
 
-  promptText: { fontSize: 13, color: C.text, lineHeight: 20, marginBottom: 10 },
-  tokenText: { fontSize: 13, color: C.cyan },
+  promptText: { fontSize: 13, color: C.text, lineHeight: 20, marginBottom: 10, fontFamily: fonts.regular },
+  tokenText: { fontSize: 13, color: C.cyan, fontFamily: fonts.regular },
 
-  logEmpty: { fontSize: 12, color: C.sub },
+  logEmpty: { fontSize: 12, color: C.sub, fontFamily: fonts.regular },
   logLine: {
-    fontSize: 11, color: C.sub, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 11, color: C.sub, fontFamily: fonts.regular,
     marginBottom: 3, lineHeight: 16,
   },
 

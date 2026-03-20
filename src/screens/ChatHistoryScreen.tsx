@@ -4,7 +4,7 @@ import {
   StyleSheet, SafeAreaView, Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { colors } from '../theme/colors';
+import { colors, fonts } from '../theme/colors';
 import { ChatMessage } from '../network/PeerProtocol';
 
 interface ChatSession {
@@ -211,11 +211,12 @@ const styles = StyleSheet.create({
   backButtonText: {
     fontSize: 24,
     color: colors.text.primary,
+    fontFamily: fonts.regular,
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '600',
     color: colors.text.primary,
+    fontFamily: fonts.regular,
   },
   saveButton: {
     paddingHorizontal: 12,
@@ -225,8 +226,8 @@ const styles = StyleSheet.create({
   },
   saveButtonText: {
     fontSize: 14,
-    fontWeight: '600',
     color: colors.button.primaryText,
+    fontFamily: fonts.regular,
   },
   actionsBar: {
     flexDirection: 'row',
@@ -239,11 +240,12 @@ const styles = StyleSheet.create({
   countText: {
     fontSize: 13,
     color: colors.text.secondary,
+    fontFamily: fonts.regular,
   },
   clearAllText: {
     fontSize: 13,
     color: colors.status.error,
-    fontWeight: '500',
+    fontFamily: fonts.regular,
   },
   list: {
     padding: 16,
@@ -265,9 +267,9 @@ const styles = StyleSheet.create({
   sessionTitle: {
     flex: 1,
     fontSize: 15,
-    fontWeight: '500',
     color: colors.text.primary,
     marginRight: 8,
+    fontFamily: fonts.regular,
   },
   deleteButton: {
     padding: 4,
@@ -276,10 +278,12 @@ const styles = StyleSheet.create({
     fontSize: 24,
     color: colors.text.tertiary,
     lineHeight: 24,
+    fontFamily: fonts.regular,
   },
   sessionMeta: {
     fontSize: 12,
     color: colors.text.tertiary,
+    fontFamily: fonts.regular,
   },
   emptyState: {
     flex: 1,
@@ -292,10 +296,12 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     textAlign: 'center',
     marginBottom: 8,
+    fontFamily: fonts.regular,
   },
   emptySubtext: {
     fontSize: 13,
     color: colors.text.tertiary,
     textAlign: 'center',
+    fontFamily: fonts.regular,
   },
 });

@@ -12,7 +12,7 @@ import { useAppStore } from '../store/appStore';
 import { relayClient } from '../network/RelayClient';
 import { ChatMessage, ProviderInfo, InferenceRequestMessage } from '../network/PeerProtocol';
 import { llamaEngine } from '../inference/LlamaEngine';
-import { colors } from '../theme/colors';
+import { colors, fonts } from '../theme/colors';
 import ProviderService from '../services/ProviderService';
 import { NodeInfoPopup } from '../components/NodeInfoPopup';
 import { LogsPopup } from '../components/LogsPopup';
@@ -46,7 +46,7 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
     connected, providers, selectedProvider, messages,
     isGenerating, setSelectedProvider, currentRequestId,
     assignedProviderId, setAssignedProviderId,
-    addMessage, appendStreamToken, finaliseMessage,
+    addMessage, setMessages, appendStreamToken, finaliseMessage,
     setGenerating, setCurrentRequestId,
     modelLoaded, modelPath, modelDownloaded,
     setModelLoaded, setModelLoading,
@@ -411,14 +411,88 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
 
       const startTime = Date.now();
       let tokensGenerated = 0;
+      let thinkingShown = false;
+      let thinkingInterval: NodeJS.Timeout | null = null;
 
       // Start live metrics
       setLiveMetrics({ tokensGenerated: 0, tokensPerSecond: 0, elapsedMs: 0 });
 
+      // Terminal-style thinking messages with green aesthetics
+      const thinkingMessages = [
+        '> initializing neural pathways...',
+        '> loading context vectors...',
+        '> analyzing query parameters...',
+        '> processing semantic patterns...',
+        '> generating response tokens...',
+        '> optimizing output stream...',
+      ];
+      let thinkingIndex = 0;
+
+      // Show thinking indicator after 1 second if no tokens received
+      const thinkingTimeout = setTimeout(() => {
+        if (tokensGenerated === 0) {
+          thinkingShown = true;
+          // Set initial thinking message
+          const currentMessages = useAppStore.getState().messages;
+          setMessages(
+            currentMessages.map((m) =>
+              m.id === assistantId
+                ? { ...m, content: thinkingMessages[0], isThinking: true }
+                : m
+            )
+          );
+
+          // Cycle through thinking messages every 1.5 seconds
+          thinkingInterval = setInterval(() => {
+            thinkingIndex = (thinkingIndex + 1) % thinkingMessages.length;
+            const currentMessages = useAppStore.getState().messages;
+            setMessages(
+              currentMessages.map((m) =>
+                m.id === assistantId && m.isThinking
+                  ? { ...m, content: thinkingMessages[thinkingIndex] }
+                  : m
+              )
+            );
+          }, 1500);
+        }
+      }, 1000);
+
       try {
+        console.log(`[ChatScreen] 🎯 Starting local inference for message ${assistantId}`);
         const result = await llamaEngine.complete(prompt, (token) => {
           tokensGenerated++;
-          appendStreamToken(assistantId, token);
+
+          // Clear thinking timeout and interval once tokens start coming
+          if (tokensGenerated === 1) {
+            clearTimeout(thinkingTimeout);
+            if (thinkingInterval) {
+              clearInterval(thinkingInterval);
+              thinkingInterval = null;
+            }
+            // Clear thinking state and replace with actual content
+            if (thinkingShown) {
+              const currentMessages = useAppStore.getState().messages;
+              setMessages(
+                currentMessages.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, content: '', isThinking: false }
+                    : m
+                )
+              );
+            }
+          }
+
+          // Log first few tokens
+          if (tokensGenerated <= 5) {
+            console.log(`[ChatScreen] 📥 Received token ${tokensGenerated}: "${token}"`);
+          }
+
+          // Append token to message
+          try {
+            appendStreamToken(assistantId, token);
+          } catch (e) {
+            console.error(`[ChatScreen] ❌ Error appending token:`, e);
+          }
 
           // Update live metrics every 5 tokens
           if (tokensGenerated % 5 === 0) {
@@ -426,7 +500,14 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
             const tokensPerSecond = elapsedMs > 0 ? (tokensGenerated / elapsedMs) * 1000 : 0;
             setLiveMetrics({ tokensGenerated, tokensPerSecond, elapsedMs });
           }
+
+          // Log progress every 50 tokens
+          if (tokensGenerated % 50 === 0) {
+            console.log(`[ChatScreen] 📊 Progress: ${tokensGenerated} tokens appended to UI`);
+          }
         });
+
+        console.log(`[ChatScreen] ✅ Completion finished - ${result.tokensGenerated} tokens in ${result.durationMs}ms`);
 
         const durationMs = Date.now() - startTime;
         const deviceName = userProfile?.displayName || 'Local Device';
@@ -439,6 +520,12 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
         const deviceName = userProfile?.displayName || 'Local Device';
         finaliseMessage(assistantId, 0, 0, deviceName);
         setLiveMetrics(null);
+      } finally {
+        // Cleanup thinking interval if still running
+        clearTimeout(thinkingTimeout);
+        if (thinkingInterval) {
+          clearInterval(thinkingInterval);
+        }
       }
     } else {
       // Use remote provider for inference
@@ -572,19 +659,29 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
 
     return (
       <View key={String(item.id)}>
-        {/* Message bubble - thinking content is stripped, only show actual response */}
-        <View
-          style={[
-            styles.messageBubble,
-            isUser ? styles.userMessage : styles.assistantMessage,
-          ]}
-        >
-          <Text style={styles.messageText}>{displayContent}</Text>
-          {item.streaming && <ActivityIndicator size="small" color={colors.accent.primary} style={styles.cursor} />}
-          {metadataText.length > 0 && (
-            <Text style={styles.metaText}>{metadataText}</Text>
-          )}
-        </View>
+        {/* Thinking indicator - terminal aesthetics */}
+        {item.isThinking ? (
+          <View style={styles.thinkingContainer}>
+            <View style={styles.thinkingPrompt}>
+              <Text style={styles.thinkingPromptText}>$</Text>
+            </View>
+            <Text style={styles.thinkingText}>{displayContent}</Text>
+          </View>
+        ) : (
+          /* Message bubble - thinking content is stripped, only show actual response */
+          <View
+            style={[
+              styles.messageBubble,
+              isUser ? styles.userMessage : styles.assistantMessage,
+            ]}
+          >
+            <Text style={styles.messageText}>{displayContent}</Text>
+            {item.streaming && <ActivityIndicator size="small" color={colors.accent.primary} style={styles.cursor} />}
+            {metadataText.length > 0 && (
+              <Text style={styles.metaText}>{metadataText}</Text>
+            )}
+          </View>
+        )}
       </View>
     );
   };
@@ -602,54 +699,57 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
             <Icon name="menu" size={20} color={colors.text.primary} />
           </TouchableOpacity>
 
-          <View style={styles.localToggleContainer}>
-            <Text style={styles.toggleLabel}>local</Text>
-            <Switch
-              value={useLocalModel}
-              onValueChange={toggleLocalMode}
-              trackColor={{ false: colors.input.border, true: colors.accent.primary }}
-              thumbColor={useLocalModel ? colors.button.secondaryText : colors.text.tertiary}
-              disabled={providerModeEnabled}
-              style={styles.localToggleSwitch}
-            />
-          </View>
+          {/* Right-aligned header controls */}
+          <View style={styles.headerRight}>
+            <View style={styles.localToggleContainer}>
+              <Text style={styles.toggleLabel}>local</Text>
+              <Switch
+                value={useLocalModel}
+                onValueChange={toggleLocalMode}
+                trackColor={{ false: colors.input.border, true: colors.accent.primary }}
+                thumbColor={useLocalModel ? colors.button.secondaryText : colors.text.tertiary}
+                disabled={providerModeEnabled}
+                style={styles.localToggleSwitch}
+              />
+            </View>
 
-          <View style={styles.nodeChipContainer}>
+            <View style={styles.nodeChipContainer}>
+              <TouchableOpacity
+                onPress={() => setShowNodeInfo(true)}
+                style={styles.nodeChip}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.nodeDot, (connected && providerModeEnabled) ? styles.nodeDotGreen : styles.nodeDotRed]} />
+                <Text style={styles.nodeChipText}>node</Text>
+                <Icon name="terminal" size={12} color={colors.text.primary} />
+              </TouchableOpacity>
+              <Switch
+                value={providerModeEnabled}
+                onValueChange={toggleProviderMode}
+                trackColor={{ false: colors.input.border, true: colors.accent.primary }}
+                thumbColor={providerModeEnabled ? colors.button.secondaryText : colors.text.tertiary}
+                disabled={!modelDownloaded}
+                style={styles.nodeToggle}
+              />
+            </View>
+
             <TouchableOpacity
-              onPress={() => setShowNodeInfo(true)}
-              style={styles.nodeChip}
+              onPress={() => setShowLogs(true)}
+              style={styles.logsChip}
               activeOpacity={0.7}
             >
-              <View style={[styles.nodeDot, (connected && providerModeEnabled) ? styles.nodeDotGreen : styles.nodeDotRed]} />
-              <Text style={styles.nodeChipText}>node</Text>
-              <Icon name="terminal" size={12} color={colors.text.primary} />
+              <Text style={styles.logsChipText}>logs</Text>
+              <Icon name="file-text" size={12} color={colors.text.primary} />
             </TouchableOpacity>
-            <Switch
-              value={providerModeEnabled}
-              onValueChange={toggleProviderMode}
-              trackColor={{ false: colors.input.border, true: colors.accent.primary }}
-              thumbColor={providerModeEnabled ? colors.button.secondaryText : colors.text.tertiary}
-              disabled={!modelDownloaded}
-              style={styles.nodeToggle}
-            />
+
+            <TouchableOpacity
+              onPress={onOpenProfile}
+              style={styles.settingsChip}
+              activeOpacity={0.7}
+            >
+              <Icon name="settings" size={16} color={colors.text.primary} />
+            </TouchableOpacity>
           </View>
-
-          <TouchableOpacity
-            onPress={() => setShowLogs(true)}
-            style={styles.logsChip}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.logsChipText}>logs</Text>
-            <Icon name="file-text" size={12} color={colors.text.primary} />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={onOpenProfile}
-            style={styles.settingsChip}
-            activeOpacity={0.7}
-          >
-            <Icon name="settings" size={16} color={colors.text.primary} />
-          </TouchableOpacity>
         </View>
 
         {/* Node Info Popup */}
@@ -796,6 +896,16 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
           }
         />
 
+        {/* Local Model Disclaimer */}
+        {useLocalModel && (
+          <View style={styles.disclaimerContainer}>
+            <Icon name="alert-circle" size={14} color={colors.text.tertiary} />
+            <Text style={styles.disclaimerText}>
+              as the model is running locally, information can be inaccurate or contain mistakes
+            </Text>
+          </View>
+        )}
+
         {/* Input */}
         <View style={styles.inputContainer}>
           <TextInput
@@ -884,13 +994,18 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 6,
     paddingTop: Platform.OS === 'android' ? 48 : 12,
     paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: colors.terminal.greenDim,
-    gap: 6,
     backgroundColor: colors.background.primary,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   headerButton: {
     width: 36,
@@ -901,33 +1016,38 @@ const styles = StyleSheet.create({
   headerButtonText: {
     fontSize: 24,
     color: colors.text.primary,
+    fontFamily: fonts.regular,
   },
   localToggleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 0,
     paddingVertical: 4,
-    paddingHorizontal: 8,
+    paddingLeft: 8,
+    paddingRight: 2,
     borderRadius: 6,
     backgroundColor: colors.terminal.background,
     borderWidth: 1,
-    borderColor: colors.terminal.blueDim,
+    borderColor: colors.terminal.greenDim,
     height: 36,
   },
   localToggleSwitch: {
     transform: [{ scaleX: 0.65 }, { scaleY: 0.65 }],
+    marginHorizontal: -4,
   },
   toggleLabel: {
     fontSize: 11,
     fontWeight: '600',
     color: colors.text.primary,
+    fontFamily: fonts.regular,
   },
   nodeChipContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 0,
     paddingVertical: 4,
-    paddingHorizontal: 8,
+    paddingLeft: 8,
+    paddingRight: 2,
     borderRadius: 6,
     backgroundColor: colors.terminal.background,
     borderWidth: 1,
@@ -941,11 +1061,13 @@ const styles = StyleSheet.create({
   },
   nodeToggle: {
     transform: [{ scaleX: 0.65 }, { scaleY: 0.65 }],
+    marginHorizontal: -6,
   },
   nodeChipText: {
     fontSize: 11,
     fontWeight: '600',
     color: colors.text.primary,
+    fontFamily: fonts.regular,
   },
   nodeDot: {
     width: 6,
@@ -968,13 +1090,14 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     backgroundColor: colors.terminal.background,
     borderWidth: 1,
-    borderColor: colors.terminal.blueDim,
+    borderColor: colors.terminal.greenDim,
     height: 36,
   },
   logsChipText: {
     fontSize: 11,
     fontWeight: '600',
     color: colors.text.primary,
+    fontFamily: fonts.regular,
   },
   settingsChip: {
     width: 36,
@@ -1000,17 +1123,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  toggleLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.text.primary,
-  },
   expandButton: {
     padding: 8,
   },
   expandButtonText: {
     fontSize: 18,
     color: colors.text.primary,
+    fontFamily: fonts.regular,
   },
   providerPanel: {
     backgroundColor: colors.background.secondary,
@@ -1029,10 +1148,12 @@ const styles = StyleSheet.create({
   providerLabel: {
     fontSize: 14,
     color: colors.text.secondary,
+    fontFamily: fonts.regular,
   },
   providerValue: {
     fontSize: 14,
     color: colors.text.primary,
+    fontFamily: fonts.regular,
   },
   activeJobCard: {
     backgroundColor: colors.background.tertiary,
@@ -1044,10 +1165,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.accent.primary,
     marginBottom: 4,
+    fontFamily: fonts.regular,
   },
   activeJobText: {
     fontSize: 12,
     color: colors.text.secondary,
+    fontFamily: fonts.regular,
   },
   statusBar: {
     flexDirection: 'row',
@@ -1067,6 +1190,7 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 12,
     color: colors.text.secondary,
+    fontFamily: fonts.regular,
   },
   providersButton: {
     flexDirection: 'row',
@@ -1077,6 +1201,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.accent.primary,
     fontWeight: '600',
+    fontFamily: fonts.regular,
   },
   queueBar: {
     backgroundColor: colors.background.secondary,
@@ -1098,10 +1223,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.text.primary,
     marginBottom: 2,
+    fontFamily: fonts.regular,
   },
   queuePosition: {
     fontSize: 11,
     color: colors.text.tertiary,
+    fontFamily: fonts.regular,
   },
   queueProgressContainer: {
     width: '100%',
@@ -1139,6 +1266,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.text.primary,
     lineHeight: 20,
+    fontFamily: fonts.regular,
   },
   cursor: {
     marginTop: 4,
@@ -1147,6 +1275,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: colors.text.tertiary,
     marginTop: 6,
+    fontFamily: fonts.regular,
   },
   metricsBar: {
     flexDirection: 'row',
@@ -1168,11 +1297,13 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 4,
+    fontFamily: fonts.regular,
   },
   metricValue: {
     fontSize: 16,
     fontWeight: '700',
     color: colors.accent.primary,
+    fontFamily: fonts.regular,
   },
   metricDivider: {
     width: 1,
@@ -1182,41 +1313,41 @@ const styles = StyleSheet.create({
   metricValueSmall: {
     fontSize: 12,
   },
-  blueDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#3B82F6',
-  },
-  thinkingLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#3B82F6',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  thinkingInline: {
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    borderLeftWidth: 3,
-    borderLeftColor: '#3B82F6',
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 6,
-    marginHorizontal: 16,
-    maxWidth: '80%',
-    alignSelf: 'flex-start',
-  },
-  thinkingInlineHeader: {
+  // Terminal-style thinking indicator
+  thinkingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
+    backgroundColor: 'transparent',
+    // borderRadius: 8,
+    // borderWidth: 1,
+    // borderColor: colors.terminal.greenDim,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+    marginHorizontal: 16,
+    maxWidth: '85%',
+    alignSelf: 'flex-start',
   },
-  thinkingInlineText: {
+  thinkingPrompt: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    backgroundColor: colors.terminal.green,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  thinkingPromptText: {
+    fontFamily: fonts.regular,
     fontSize: 12,
-    color: colors.text.secondary,
-    fontStyle: 'italic',
-    lineHeight: 16,
+    color: colors.terminal.background,
+  },
+  thinkingText: {
+    flex: 1,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    color: colors.terminal.green,
+    letterSpacing: 0.3,
   },
   emptyState: {
     flex: 1,
@@ -1229,6 +1360,7 @@ const styles = StyleSheet.create({
     color: colors.text.tertiary,
     textAlign: 'center',
     marginBottom: 16,
+    fontFamily: fonts.regular,
   },
   downloadButton: {
     backgroundColor: colors.button.primary,
@@ -1241,6 +1373,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: colors.button.primaryText,
+    fontFamily: fonts.regular,
   },
   emptyStateTitle: {
     fontSize: 28,
@@ -1248,6 +1381,7 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
     textAlign: 'center',
     marginBottom: 32,
+    fontFamily: fonts.regular,
   },
   suggestionGrid: {
     flexDirection: 'row',
@@ -1275,10 +1409,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: colors.text.secondary,
+    fontFamily: fonts.regular,
+  },
+  disclaimerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 6,
+    backgroundColor: colors.background.secondary,
+  },
+  disclaimerText: {
+    flex: 1,
+    fontSize: 11,
+    color: colors.text.tertiary,
+    fontFamily: fonts.regular,
   },
   inputContainer: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderTopWidth: 1,
@@ -1295,6 +1444,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.text.primary,
     maxHeight: 100,
+    fontFamily: fonts.regular,
   },
   sendButton: {
     width: 40,
@@ -1303,7 +1453,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.button.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
   },
   sendButtonDisabled: {
     backgroundColor: colors.button.disabled,
@@ -1314,5 +1463,6 @@ const styles = StyleSheet.create({
   sendButtonText: {
     fontSize: 20,
     color: colors.button.primaryText,
+    fontFamily: fonts.regular,
   },
 });

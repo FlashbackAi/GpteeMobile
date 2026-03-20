@@ -174,4 +174,5 @@ export interface ChatMessage {
   tokensGenerated?: number;
   durationMs?: number;
   fulfilledBy?: string; // Display name of provider who fulfilled this request
+  isThinking?: boolean; // Terminal-style thinking indicator
 }
