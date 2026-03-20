@@ -571,7 +571,10 @@ class RelayClient {
   // ── Retry with next available provider ────────────────────────────────────────
   private async retryWithNextProvider(requestId: string) {
     const pending = this.pendingRequests.get(requestId);
-    if (!pending) return;
+    if (!pending) {
+      console.log(`[RelayClient] ⚠️ Timeout for request ${requestId} but it's no longer pending - ignoring`);
+      return;
+    }
 
     console.log(`[RelayClient] 🔍 Checking providers - Current list has ${this.providers.length} providers`);
     console.log(`[RelayClient] Failed provider: ${pending.providerId}`);
@@ -588,8 +591,21 @@ class RelayClient {
         console.log(`[RelayClient] ⚠️ Provider list might be stale - only has the failed provider`);
       }
 
-      this.onInferenceError?.(requestId, 'NO_PROVIDERS_AVAILABLE', 'No alternative providers available. Please try again.');
+      // Clean up the pending request
+      if (pending.timeoutTimer) {
+        clearTimeout(pending.timeoutTimer);
+      }
       this.pendingRequests.delete(requestId);
+
+      // Only show error if this is still an active request (not a stale one)
+      // Check if there are any tokens already received for this request
+      if (pending.startTime && (Date.now() - pending.startTime) < 5000) {
+        // Only show error for requests that failed quickly (< 5 seconds)
+        // This filters out stale requests that timed out after user moved on
+        this.onInferenceError?.(requestId, 'NO_PROVIDERS_AVAILABLE', 'No alternative providers available. Please try again.');
+      } else {
+        console.log(`[RelayClient] ℹ️ Silently dropping timeout for old request ${requestId}`);
+      }
       return;
     }
 
@@ -809,6 +825,16 @@ class RelayClient {
       const error = `❌ Cannot send cancel request: WebRTC not connected (P2P-only mode)`;
       console.error('[RelayClient]', error);
       throw new Error(error);
+    }
+
+    // CRITICAL: Clean up pending request and timeout timer
+    const pending = this.pendingRequests.get(requestId);
+    if (pending) {
+      console.log(`[RelayClient] 🧹 Cleaning up cancelled request ${requestId}`);
+      if (pending.timeoutTimer) {
+        clearTimeout(pending.timeoutTimer);
+      }
+      this.pendingRequests.delete(requestId);
     }
   }
 

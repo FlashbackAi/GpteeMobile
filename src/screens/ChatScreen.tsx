@@ -41,6 +41,7 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
     tokensPerSecond: number;
     elapsedMs: number;
   } | null>(null);
+  const remoteThinkingCleanupRef = useRef<Map<string, () => void>>(new Map());
 
   const {
     connected, providers, selectedProvider, messages,
@@ -92,6 +93,13 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
   useEffect(() => {
     // User mode callbacks (receiving responses) - use store directly to avoid stale closures
     relayClient.onStreamToken = (requestId, token) => {
+      // Clear thinking indicator on first token
+      const cleanup = remoteThinkingCleanupRef.current.get(requestId);
+      if (cleanup) {
+        cleanup();
+        remoteThinkingCleanupRef.current.delete(requestId);
+      }
+
       const { appendStreamToken } = useAppStore.getState();
       appendStreamToken(requestId, token);
     };
@@ -559,6 +567,66 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
 
       setGenerating(true);
       setCurrentRequestId(requestId);
+
+      // Terminal-style thinking indicator for remote inference
+      const thinkingMessages = [
+        '> establishing connection...',
+        '> sending request to provider...',
+        '> waiting for response...',
+        '> processing on remote device...',
+        '> receiving tokens...',
+        '> streaming response...',
+      ];
+      let thinkingIndex = 0;
+      let thinkingShown = false;
+      let thinkingInterval: NodeJS.Timeout | null = null;
+
+      // Show thinking indicator after 1 second if no tokens received
+      const thinkingTimeout = setTimeout(() => {
+        thinkingShown = true;
+        const currentMessages = useAppStore.getState().messages;
+        setMessages(
+          currentMessages.map((m) =>
+            m.id === requestId
+              ? { ...m, content: thinkingMessages[0], isThinking: true }
+              : m
+          )
+        );
+
+        // Cycle through thinking messages every 1.5 seconds
+        thinkingInterval = setInterval(() => {
+          thinkingIndex = (thinkingIndex + 1) % thinkingMessages.length;
+          const currentMessages = useAppStore.getState().messages;
+          setMessages(
+            currentMessages.map((m) =>
+              m.id === requestId && m.isThinking
+                ? { ...m, content: thinkingMessages[thinkingIndex] }
+                : m
+            )
+          );
+        }, 1500);
+      }, 1000);
+
+      // Store cleanup function for when first token arrives
+      const cleanup = () => {
+        clearTimeout(thinkingTimeout);
+        if (thinkingInterval) {
+          clearInterval(thinkingInterval);
+        }
+        if (thinkingShown) {
+          const currentMessages = useAppStore.getState().messages;
+          setMessages(
+            currentMessages.map((m) =>
+              m.id === requestId
+                ? { ...m, content: '', isThinking: false }
+                : m
+            )
+          );
+        }
+      };
+
+      // Store cleanup function so relay callback can access it
+      remoteThinkingCleanupRef.current.set(requestId, cleanup);
     }
   };
 
@@ -896,15 +964,15 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
           }
         />
 
-        {/* Local Model Disclaimer */}
-        {useLocalModel && (
-          <View style={styles.disclaimerContainer}>
-            <Icon name="alert-circle" size={14} color={colors.text.tertiary} />
-            <Text style={styles.disclaimerText}>
-              as the model is running locally, information can be inaccurate or contain mistakes
-            </Text>
-          </View>
-        )}
+        {/* Disclaimer */}
+        <View style={styles.disclaimerContainer}>
+          <Icon name="alert-circle" size={14} color={colors.text.tertiary} />
+          <Text style={styles.disclaimerText}>
+            {useLocalModel
+              ? 'as the model is running locally, information can be inaccurate or contain mistakes'
+              : 'information can be inaccurate or contain mistakes · end-to-end encrypted'}
+          </Text>
+        </View>
 
         {/* Input */}
         <View style={styles.inputContainer}>
