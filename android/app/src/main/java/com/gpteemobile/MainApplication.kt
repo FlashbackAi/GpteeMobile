@@ -19,6 +19,9 @@ class MainApplication : Application(), ReactApplication {
           // Add custom provider service package
           packages.add(ProviderServicePackage())
 
+          // Add image decoder package
+          packages.add(ImageDecoderPackage())
+
           return packages
         }
 

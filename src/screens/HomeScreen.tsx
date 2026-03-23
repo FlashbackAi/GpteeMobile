@@ -22,9 +22,10 @@ import { relayClient } from '../network/RelayClient';
 interface Props {
   onSelectRole: () => void;
   onOpenProfile: () => void;
+  onOpenFaceTest?: () => void;
 }
 
-export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
+export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest }: Props) {
   const connected = useAppStore((s) => s.connected);
   const modelDownloaded = useAppStore((s) => s.modelDownloaded);
   const modelLoaded = useAppStore((s) => s.modelLoaded);
@@ -235,6 +236,16 @@ export default function HomeScreen({ onSelectRole, onOpenProfile }: Props) {
           >
             <Text style={styles.startButtonText}>start chat</Text>
           </TouchableOpacity>
+
+          {onOpenFaceTest && (
+            <TouchableOpacity
+              style={[styles.startButton, { backgroundColor: colors.darkGray, marginTop: 10 }]}
+              onPress={onOpenFaceTest}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.startButtonText, { color: colors.cream }]}>test face recognition</Text>
+            </TouchableOpacity>
+          )}
 
           <Text style={styles.footer}>
             all inference is private · end-to-end encrypted

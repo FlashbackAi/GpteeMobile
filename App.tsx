@@ -10,6 +10,7 @@ import ChatScreen from './src/screens/ChatScreen';
 import ChatHistoryScreen from './src/screens/ChatHistoryScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
+import { FaceRecognitionTestScreen } from './src/screens/FaceRecognitionTestScreen';
 import { ChatMessage } from './src/network/PeerProtocol';
 import { ModelDownloadManager, AVAILABLE_MODELS } from './src/services/ModelDownloadManager';
 
@@ -23,6 +24,7 @@ import { ModelDownloadManager, AVAILABLE_MODELS } from './src/services/ModelDown
 export default function App() {
   const [showProfile, setShowProfile] = useState(false);
   const [showChatHistory, setShowChatHistory] = useState(false);
+  const [showFaceTest, setShowFaceTest] = useState(false);
   const [started, setStarted] = useState(false);
   const {
     setConnected,
@@ -351,8 +353,12 @@ export default function App() {
     );
   }
 
+  if (showFaceTest) {
+    return <FaceRecognitionTestScreen onBack={() => setShowFaceTest(false)} />;
+  }
+
   if (!started) {
-    return <HomeScreen onSelectRole={handleStart} onOpenProfile={() => setShowProfile(true)} />;
+    return <HomeScreen onSelectRole={handleStart} onOpenProfile={() => setShowProfile(true)} onOpenFaceTest={() => setShowFaceTest(true)} />;
   }
 
   return (
