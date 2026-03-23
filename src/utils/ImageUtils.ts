@@ -2,11 +2,49 @@
 // Handles loading images from URIs and converting to tensor format
 
 import RNFS from 'react-native-fs';
+import { decodeImageToRGB, rgbToTensorRetinaFace, getImageDimensions } from './ImageDecoder';
 
 export interface ImageData {
-  data: Float32Array;
+  imageData: Float32Array;
   width: number;
   height: number;
+}
+
+/**
+ * Load and preprocess image from file path
+ * Uses native ImageDecoder module for proper JPEG/PNG decoding
+ * @param imagePath - Local file path to the image
+ * @param maxDimension - Maximum dimension to resize the image
+ * @returns Preprocessed image data (Float32Array in CHW format)
+ */
+export async function loadAndPreprocessImage(
+  imagePath: string,
+  maxDimension: number = 2600
+): Promise<{ imageData: Float32Array; width: number; height: number }> {
+  // Get original dimensions
+  const { width: originalWidth, height: originalHeight } = await getImageDimensions(imagePath);
+
+  // Calculate target dimensions (maintain aspect ratio)
+  const scale = Math.min(1, maxDimension / Math.max(originalWidth, originalHeight));
+  const targetWidth = Math.round(originalWidth * scale);
+  const targetHeight = Math.round(originalHeight * scale);
+
+  console.log(`[ImageUtils] Loading image: ${originalWidth}x${originalHeight} -> ${targetWidth}x${targetHeight}`);
+
+  // Decode image to RGB
+  const { data: rgbData, width, height } = await decodeImageToRGB(imagePath, targetWidth, targetHeight);
+
+  // Convert Uint8Array RGB to Float32Array tensor format
+  // Using RetinaFace preprocessing (BGR, mean subtraction)
+  const imageData = rgbToTensorRetinaFace(rgbData, width, height);
+
+  console.log(`[ImageUtils] Image loaded: ${width}x${height}, tensor size: ${imageData.length}`);
+
+  return {
+    imageData,
+    width,
+    height,
+  };
 }
 
 /**
@@ -98,3 +136,11 @@ export function cropFace(
 
   return croppedData;
 }
+
+// Default export for require() compatibility
+export default {
+  loadAndPreprocessImage,
+  loadImageFromUri,
+  preprocessForDetection,
+  cropFace,
+};

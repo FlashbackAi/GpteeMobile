@@ -22,6 +22,9 @@ class MainApplication : Application(), ReactApplication {
           // Add image decoder package
           packages.add(ImageDecoderPackage())
 
+          // Add thermal manager package
+          packages.add(ThermalManagerPackage())
+
           return packages
         }
 

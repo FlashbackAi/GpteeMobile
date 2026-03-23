@@ -20,13 +20,10 @@ import {
   ChatMessage,
 } from './PeerProtocol';
 import { WebRTCClient } from './WebRTCClient';
+import { RELAY_SERVER_URL } from '../config';
 
 // ── Config ────────────────────────────────────────────────────────────────────
-// Replace with your relay server URL (use your local IP or deployed server)
-// Example for local testing: ws://192.168.1.100:8080
-// Example for deployed: ws://your-server.com:8080
-// **** AWS EIP: 13.126.31.242*****
-export const RELAY_URL = 'ws://13.126.31.242:9293'; // Android emulator localhost
+export const RELAY_URL = RELAY_SERVER_URL;
 
 // ── Callback types ────────────────────────────────────────────────────────────
 export type OnProvidersUpdated = (providers: ProviderInfo[]) => void;

@@ -23,22 +23,24 @@ export const VISION_MODELS: VisionModelInfo[] = [
     size: 11_900_000, // ~12 MB
     description: 'RetinaFace MobileNetV2 - High accuracy (86.6% hard cases), better diversity performance',
   },
+  // === RECOGNITION - Disabled for Worker Mode ===
   // {
-  //   name: 'Recognition (w600k_r50)',
+  //   name: 'Recognition (AntelopeV2 glintr100)',
   //   type: 'recognition',
-  //   url: 'https://huggingface.co/FlashbackLabsInc/MachineVisionService/resolve/main/w600k_r50.onnx',
-  //   filename: 'w600k_r50.onnx',
-  //   size: 166_000_000,
-  //   description: 'ArcFace ResNet50 - Face recognition',
+  //   url: 'https://huggingface.co/immich-app/antelopev2/resolve/main/recognition/model.onnx',
+  //   filename: 'glintr100.onnx',
+  //   size: 261_000_000, // ~261 MB
+  //   description: 'AntelopeV2 ResNet100@Glint360K - Better recognition accuracy (512-d embeddings)',
   // },
-  // {
-  //   name: 'Age & Gender',
-  //   type: 'age-gender',
-  //   url: 'https://huggingface.co/FlashbackLabsInc/MachineVisionService/resolve/main/genderage.onnx',
-  //   filename: 'genderage.onnx',
-  //   size: 1_300_000,
-  //   description: 'Age and gender estimation',
-  // },
+  // === AGE & GENDER - InsightFace Buffalo_L (Official) ===
+  {
+    name: 'Age & Gender (Buffalo_L)',
+    type: 'age-gender',
+    url: 'https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/genderage.onnx',
+    filename: 'genderage.onnx',
+    size: 1_320_000, // ~1.32 MB
+    description: 'InsightFace Buffalo_L - Age and gender estimation (96x96 input)',
+  },
 ];
 
 // Production model combination

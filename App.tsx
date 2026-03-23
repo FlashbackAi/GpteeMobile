@@ -11,8 +11,11 @@ import ChatHistoryScreen from './src/screens/ChatHistoryScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import { FaceRecognitionTestScreen } from './src/screens/FaceRecognitionTestScreen';
+import { ImageWorkerScreen } from './src/screens/ImageWorkerScreen';
 import { ChatMessage } from './src/network/PeerProtocol';
 import { ModelDownloadManager, AVAILABLE_MODELS } from './src/services/ModelDownloadManager';
+import { VisionWorkerService } from './src/services/VisionWorkerService';
+import { FaceRecognitionService } from './src/services/FaceRecognitionService';
 
 // Set default font for all Text and TextInput components
 (Text as any).defaultProps = (Text as any).defaultProps || {};
@@ -25,6 +28,7 @@ export default function App() {
   const [showProfile, setShowProfile] = useState(false);
   const [showChatHistory, setShowChatHistory] = useState(false);
   const [showFaceTest, setShowFaceTest] = useState(false);
+  const [showImageWorker, setShowImageWorker] = useState(false);
   const [started, setStarted] = useState(false);
   const {
     setConnected,
@@ -52,6 +56,12 @@ export default function App() {
     connected,
     batteryThreshold,
     loadBatteryThreshold,
+    // Image Worker
+    loadImageWorkerEnabled,
+    loadCoordinatorUrl,
+    setImageWorkerStatus,
+    setImageWorkerStats,
+    updateImageWorkerStats,
   } = useAppStore();
 
   // ── Load user profile and check model state on mount ──────────────────────
@@ -65,23 +75,74 @@ export default function App() {
       await loadUserProfile();
       await loadProviderModeEnabled();
       await loadLocalInferenceMode();
+      await loadImageWorkerEnabled();
+      await loadCoordinatorUrl();
       await checkModelDownloadState();
 
-      // Load model if downloaded
-      const { modelPath: path, modelDownloaded } = useAppStore.getState();
-      if (modelDownloaded && path && !llamaEngine.isLoaded() && !llamaEngine.isLoading()) {
-        addLog('⏳ Loading model on startup...');
+      // Load LLM model if provider mode is enabled
+      const {
+        modelPath: path,
+        modelDownloaded,
+        providerModeEnabled,
+        imageWorkerEnabled,
+        visionModelsDownloaded,
+      } = useAppStore.getState();
+
+      // Initialize LLM for provider mode
+      if (providerModeEnabled && modelDownloaded && path && !llamaEngine.isLoaded() && !llamaEngine.isLoading()) {
+        addLog('⏳ Loading LLM model for provider mode...');
         setModelLoading(true);
         try {
           await llamaEngine.loadModel(path);
           setModelLoaded(true);
           setModelLoading(false);
-          addLog('✅ Model loaded successfully');
+          addLog('✅ LLM model loaded successfully');
         } catch (error: any) {
           setModelLoading(false);
-          addLog(`❌ Model load failed: ${error.message}`);
+          addLog(`❌ LLM model load failed: ${error.message}`);
         }
       }
+
+      // Initialize vision models for worker mode
+      if (imageWorkerEnabled && visionModelsDownloaded) {
+        const faceService = FaceRecognitionService.getInstance();
+        if (!faceService.isReady()) {
+          addLog('⏳ Loading vision models for worker mode...');
+          try {
+            await faceService.initialize();
+            setVisionModelsLoaded(true);
+            addLog('✅ Vision models loaded successfully');
+          } catch (error: any) {
+            addLog(`❌ Vision models load failed: ${error.message}`);
+          }
+        }
+      }
+
+      // Initialize worker service and set up event listeners
+      const workerService = VisionWorkerService.getInstance();
+
+      // Set up event listeners for worker state changes
+      workerService.addEventListener('status_changed', (data: any) => {
+        console.log('[App] Worker status changed:', data.status);
+        setImageWorkerStatus(data.status);
+      });
+
+      workerService.addEventListener('stats_updated', (data: any) => {
+        console.log('[App] Worker stats updated:', data.stats);
+        setImageWorkerStats(data.stats);
+      });
+
+      workerService.addEventListener('task_completed', (data: any) => {
+        console.log('[App] Task completed:', data.taskId);
+        const stats = workerService.getStatistics();
+        setImageWorkerStats(stats);
+      });
+
+      workerService.addEventListener('task_failed', (data: any) => {
+        console.log('[App] Task failed:', data.taskId);
+        const stats = workerService.getStatistics();
+        setImageWorkerStats(stats);
+      });
 
       setDataLoaded(true); // Signal that data is loaded and we can connect
     };
@@ -357,8 +418,17 @@ export default function App() {
     return <FaceRecognitionTestScreen onBack={() => setShowFaceTest(false)} />;
   }
 
+  if (showImageWorker) {
+    return <ImageWorkerScreen onBack={() => setShowImageWorker(false)} />;
+  }
+
   if (!started) {
-    return <HomeScreen onSelectRole={handleStart} onOpenProfile={() => setShowProfile(true)} onOpenFaceTest={() => setShowFaceTest(true)} />;
+    return <HomeScreen
+      onSelectRole={handleStart}
+      onOpenProfile={() => setShowProfile(true)}
+      onOpenFaceTest={() => setShowFaceTest(true)}
+      onOpenImageWorker={() => setShowImageWorker(true)}
+    />;
   }
 
   return (

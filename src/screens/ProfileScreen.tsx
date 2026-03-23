@@ -19,10 +19,17 @@ import {
 } from '../services/ModelDownloadManager';
 import { colors, fonts } from '../theme/colors';
 import { Accordion } from '../components/Accordion';
+import { VisionModelDownloader } from '../services/VisionModelDownloader';
+import { VISION_MODELS } from '../services/FaceRecognitionModels';
+import { VisionWorkerService } from '../services/VisionWorkerService';
+import { FaceRecognitionService } from '../services/FaceRecognitionService';
+import { llamaEngine } from '../inference/LlamaEngine';
+import Toast from 'react-native-toast-message';
 
 export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const {
     modelDownloaded,
+    modelLoaded,
     modelDownloading,
     modelDownloadProgress,
     modelFilename,
@@ -36,10 +43,17 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     loadBatteryThreshold,
     providerModeEnabled,
     setProviderModeEnabled,
+    imageWorkerEnabled,
+    setImageWorkerEnabled,
     userProfile,
     peerId,
     nodeStats,
     loadNodeStats,
+    visionModelsDownloaded,
+    visionModelsLoaded,
+    setVisionModelsDownloaded,
+    setVisionModelsLoaded,
+    setModelLoaded,
   } = useAppStore();
 
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
@@ -47,12 +61,17 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [downloadedModels, setDownloadedModels] = useState<string[]>([]);
   const [modelSize, setModelSize] = useState<number>(0);
   const [batteryLevel, setBatteryLevel] = useState<number>(0);
+  const [downloadingVisionModels, setDownloadingVisionModels] = useState(false);
+  const [visionModelsProgress, setVisionModelsProgress] = useState(0);
+  const [visionModelsSize, setVisionModelsSize] = useState(0);
 
   const modelManager = ModelDownloadManager.getInstance();
+  const visionDownloader = VisionModelDownloader.getInstance();
 
   useEffect(() => {
     loadSystemInfo();
     loadDownloadedModels();
+    loadVisionModels();
     loadBatteryInfo();
     loadBatteryThreshold(); // Load saved threshold
     loadNodeStats(); // Load node statistics
@@ -111,8 +130,139 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     }
   };
 
+  const loadVisionModels = async () => {
+    const downloaded = await visionDownloader.areAllModelsDownloaded();
+    setVisionModelsDownloaded(downloaded);
+
+    if (downloaded) {
+      // Calculate total size of downloaded vision models
+      let totalSize = 0;
+      for (const model of VISION_MODELS) {
+        const size = await visionDownloader.getDownloadedModelSize(model);
+        totalSize += size;
+      }
+      setVisionModelsSize(totalSize);
+    } else {
+      setVisionModelsSize(0);
+    }
+  };
+
   const handleBatteryThresholdChange = (value: number) => {
     setBatteryThreshold(value); // This saves to AsyncStorage via store action
+  };
+
+  const handleProviderModeToggle = async (value: boolean) => {
+    if (value) {
+      // Check if LLM model is downloaded
+      if (!modelDownloaded) {
+        Toast.show({
+          type: 'error',
+          text1: 'llm model required',
+          text2: 'please download the model first',
+          position: 'top',
+        });
+        return;
+      }
+
+      // Check battery level
+      if (batteryLevel < batteryThreshold) {
+        Toast.show({
+          type: 'error',
+          text1: 'battery too low',
+          text2: `please charge above ${batteryThreshold}%`,
+          position: 'top',
+        });
+        return;
+      }
+
+      // MUTUAL EXCLUSIVITY: Disable worker mode if enabled
+      if (imageWorkerEnabled) {
+        await setImageWorkerEnabled(false);
+        const workerService = VisionWorkerService.getInstance();
+        await workerService.stopWorkerMode();
+        try {
+          const faceService = FaceRecognitionService.getInstance();
+          await faceService.release();
+        } catch (error) {
+          console.warn('Error releasing vision models:', error);
+        }
+        setVisionModelsLoaded(false);
+        Toast.show({
+          type: 'info',
+          text1: 'worker mode disabled',
+          text2: 'provider mode enabled',
+          position: 'top',
+        });
+      }
+    }
+    setProviderModeEnabled(value);
+  };
+
+  const handleWorkerModeToggle = async (value: boolean) => {
+    if (value) {
+      // Check if vision models are downloaded
+      if (!visionModelsDownloaded) {
+        Toast.show({
+          type: 'error',
+          text1: 'vision models required',
+          text2: 'please download vision models first',
+          position: 'top',
+        });
+        return;
+      }
+
+      // Check battery level
+      if (batteryLevel < batteryThreshold) {
+        Toast.show({
+          type: 'error',
+          text1: 'battery too low',
+          text2: `please charge above ${batteryThreshold}%`,
+          position: 'top',
+        });
+        return;
+      }
+
+      // MUTUAL EXCLUSIVITY: Disable provider mode if enabled
+      if (providerModeEnabled) {
+        await setProviderModeEnabled(false);
+        await llamaEngine.unload();
+        setModelLoaded(false);
+        Toast.show({
+          type: 'info',
+          text1: 'provider mode disabled',
+          text2: 'worker mode enabled',
+          position: 'top',
+        });
+      }
+
+      // Load vision models if not already loaded
+      if (!visionModelsLoaded) {
+        Toast.show({
+          type: 'info',
+          text1: 'loading vision models...',
+          text2: 'this may take a moment',
+          position: 'top',
+        });
+
+        try {
+          const faceService = FaceRecognitionService.getInstance();
+          await faceService.initialize();
+          setVisionModelsLoaded(true);
+        } catch (error) {
+          Toast.show({
+            type: 'error',
+            text1: 'failed to load models',
+            text2: 'could not initialize vision models',
+            position: 'top',
+          });
+          return;
+        }
+      }
+    } else {
+      const workerService = VisionWorkerService.getInstance();
+      await workerService.stopWorkerMode();
+    }
+    setImageWorkerEnabled(value);
   };
 
   const handleDownloadModel = async () => {
@@ -198,6 +348,93 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               Alert.alert('deleted', 'model removed successfully.');
             } catch (error: any) {
               Alert.alert('error', error.message || 'failed to delete model');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleDownloadVisionModels = async () => {
+    if (visionModelsDownloaded) {
+      Toast.show({
+        type: 'info',
+        text1: 'already downloaded',
+        text2: 'vision models are already on your device',
+        position: 'top',
+      });
+      return;
+    }
+
+    // Check available space - require at least 100MB free
+    const freeSpace = await modelManager.getAvailableSpace();
+    const requiredSpace = 100000000; // 100MB minimum
+    if (freeSpace < requiredSpace) {
+      Alert.alert(
+        'insufficient storage',
+        `need at least ${HardwareMonitor.formatBytes(requiredSpace)} free, but only ${HardwareMonitor.formatBytes(freeSpace)} available.`,
+      );
+      return;
+    }
+
+    setDownloadingVisionModels(true);
+    setVisionModelsProgress(0);
+
+    try {
+      let totalProgress = 0;
+      let completedModels = 0;
+
+      await visionDownloader.downloadAllModels((modelName, progress) => {
+        if (progress.progress === 100) {
+          completedModels++;
+        }
+        // Average progress across all models
+        totalProgress = (completedModels * 100 + progress.progress) / VISION_MODELS.length;
+        setVisionModelsProgress(Math.round(totalProgress));
+      });
+
+      setVisionModelsDownloaded(true);
+      await loadVisionModels();
+
+      Toast.show({
+        type: 'success',
+        text1: 'vision models downloaded',
+        text2: 'you can now enable image worker mode',
+        position: 'top',
+      });
+    } catch (error: any) {
+      Toast.show({
+        type: 'error',
+        text1: 'download failed',
+        text2: error.message,
+        position: 'top',
+      });
+    } finally {
+      setDownloadingVisionModels(false);
+    }
+  };
+
+  const handleDeleteVisionModels = async () => {
+    const sizeText = visionModelsSize > 0
+      ? `and free up ${HardwareMonitor.formatBytes(visionModelsSize)}`
+      : '';
+
+    Alert.alert(
+      'delete vision models?',
+      `this will delete all vision models ${sizeText}.`,
+      [
+        { text: 'cancel', style: 'cancel' },
+        {
+          text: 'delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await visionDownloader.deleteAllModels();
+              setVisionModelsDownloaded(false);
+              await loadVisionModels();
+              Alert.alert('deleted', 'vision models removed successfully.');
+            } catch (error: any) {
+              Alert.alert('error', error.message || 'failed to delete models');
             }
           },
         },
@@ -301,6 +538,77 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               )}
             </View>
           </View>
+
+          {/* Vision Models Card */}
+          <View style={styles.modelTerminalCard}>
+            <View style={styles.modelHeader}>
+              <View style={styles.terminalPrompt}>
+                <Text style={styles.terminalPromptText}>$</Text>
+              </View>
+              <Text style={styles.modelTerminalName}>vision models</Text>
+            </View>
+
+            <View style={styles.modelMetaRow}>
+              <Text style={styles.modelMetaLabel}>type:</Text>
+              <Text style={styles.modelMetaValue}>onnx runtime</Text>
+            </View>
+
+            <View style={styles.modelMetaRow}>
+              <Text style={styles.modelMetaLabel}>desc:</Text>
+              <Text style={styles.modelMetaValue}>face detection & age/gender estimation</Text>
+            </View>
+
+            {visionModelsSize > 0 && (
+              <View style={styles.modelMetaRow}>
+                <Text style={styles.modelMetaLabel}>size:</Text>
+                <Text style={styles.modelMetaValue}>{HardwareMonitor.formatBytes(visionModelsSize)}</Text>
+              </View>
+            )}
+
+            {/* Download Progress */}
+            {downloadingVisionModels && (
+              <View style={styles.terminalProgressContainer}>
+                <View style={styles.terminalProgressBar}>
+                  <View
+                    style={[
+                      styles.terminalProgressFill,
+                      { width: `${visionModelsProgress}%` },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.terminalProgressText}>
+                  [{visionModelsProgress.toFixed(1)}%] downloading...
+                </Text>
+              </View>
+            )}
+
+            {/* Status Badge */}
+            {visionModelsDownloaded && !downloadingVisionModels && (
+              <View style={styles.modelStatusRow}>
+                <Text style={styles.modelStatusLabel}>status:</Text>
+                <Text style={styles.modelStatusReady}>● ready</Text>
+              </View>
+            )}
+
+            {/* Action Buttons */}
+            <View style={styles.modelActions}>
+              {!visionModelsDownloaded && !downloadingVisionModels && (
+                <TouchableOpacity
+                  style={styles.terminalButton}
+                  onPress={handleDownloadVisionModels}>
+                  <Text style={styles.terminalButtonText}>[ download ]</Text>
+                </TouchableOpacity>
+              )}
+
+              {visionModelsDownloaded && !downloadingVisionModels && (
+                <TouchableOpacity
+                  style={styles.terminalButtonDanger}
+                  onPress={handleDeleteVisionModels}>
+                  <Text style={styles.terminalButtonDangerText}>[ delete ]</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
         </View>
         </Accordion>
 
@@ -316,10 +624,28 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   <Text style={styles.styledBoxValue}>{providerModeEnabled ? 'enabled' : 'disabled'}</Text>
                   <Switch
                     value={providerModeEnabled}
-                    onValueChange={setProviderModeEnabled}
+                    onValueChange={handleProviderModeToggle}
                     trackColor={{ false: colors.input.border, true: colors.terminal.green }}
                     thumbColor={colors.terminal.prompt}
                     disabled={!modelDownloaded || batteryLevel < batteryThreshold}
+                  />
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.styledBoxContainer}>
+              <View style={styles.styledBoxLabel}>
+                <Text style={styles.styledBoxLabelText}>worker mode</Text>
+              </View>
+              <View style={styles.styledBox}>
+                <View style={styles.switchRow}>
+                  <Text style={styles.styledBoxValue}>{imageWorkerEnabled ? 'enabled' : 'disabled'}</Text>
+                  <Switch
+                    value={imageWorkerEnabled}
+                    onValueChange={handleWorkerModeToggle}
+                    trackColor={{ false: colors.input.border, true: colors.terminal.green }}
+                    thumbColor={colors.terminal.prompt}
+                    disabled={!visionModelsDownloaded || batteryLevel < batteryThreshold}
                   />
                 </View>
               </View>

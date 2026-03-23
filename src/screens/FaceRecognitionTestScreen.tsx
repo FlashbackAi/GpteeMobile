@@ -17,7 +17,7 @@ import { FaceRecognitionService } from '../services/FaceRecognitionService';
 import { VisionModelDownloader, DownloadProgress } from '../services/VisionModelDownloader';
 import { VISION_MODELS, DetectionResult } from '../services/FaceRecognitionModels';
 import { colors, fonts } from '../theme/colors';
-import { decodeImageToRGB, rgbToTensor, rgbToTensorRetinaFace } from '../utils/ImageDecoder';
+import { decodeImageToRGB, rgbToTensor, rgbToTensorRetinaFace, getImageDimensions } from '../utils/ImageDecoder';
 
 interface TestResult {
   imageUri: string;
@@ -45,8 +45,11 @@ export const FaceRecognitionTestScreen: React.FC<Props> = ({ onBack }) => {
   const [downloadProgress, setDownloadProgress] = useState<Record<string, number>>({});
   const [isDownloading, setIsDownloading] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [testResult2, setTestResult2] = useState<TestResult | null>(null);
+  const [comparisonScore, setComparisonScore] = useState<number | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedImage2, setSelectedImage2] = useState<string | null>(null);
   const [displayDimensions, setDisplayDimensions] = useState<{ width: number; height: number } | null>(null);
 
   const faceService = FaceRecognitionService.getInstance();
@@ -104,7 +107,145 @@ export const FaceRecognitionTestScreen: React.FC<Props> = ({ onBack }) => {
       if (uri) {
         setSelectedImage(uri);
         setTestResult(null);
+        setComparisonScore(null);
       }
+    }
+  };
+
+  const handlePickImage2 = async () => {
+    try {
+      const result = await launchImageLibrary({
+        mediaType: 'photo',
+        quality: 1,
+        selectionLimit: 1,
+      });
+
+      if (result.didCancel) {
+        console.log('User cancelled image picker');
+        return;
+      }
+
+      if (result.errorCode) {
+        Alert.alert('Error', `Image picker error: ${result.errorMessage}`);
+        return;
+      }
+
+      if (result.assets && result.assets[0]) {
+        const uri = result.assets[0].uri;
+        if (uri) {
+          console.log(`Image 2 picked: ${uri}`);
+          setSelectedImage2(uri);
+          setTestResult2(null);
+          setComparisonScore(null);
+        }
+      }
+    } catch (error) {
+      console.error('Error picking image 2:', error);
+      Alert.alert('Error', `Failed to pick image: ${error}`);
+    }
+  };
+
+  const processImage2 = async (imagePath: string) => {
+    setIsProcessing(true);
+
+    try {
+      console.log(`Processing image 2 from: ${imagePath}`);
+      const startTime = Date.now();
+      const faceService = FaceRecognitionService.getInstance();
+
+      // Decode at max resolution first to get dimensions
+      // We'll let decodeImageToRGB handle the scaling
+      const initialDecode = await decodeImageToRGB(imagePath, 6000, 6000);
+
+      const originalWidth = initialDecode.originalWidth || initialDecode.width;
+      const originalHeight = initialDecode.originalHeight || initialDecode.height;
+
+      console.log(`Image 2 original dimensions: ${originalWidth}x${originalHeight}`);
+
+      // Smart resolution scaling
+      const maxPixels = 6_000_000;
+      const originalPixels = originalWidth * originalHeight;
+
+      let targetWidth = originalWidth;
+      let targetHeight = originalHeight;
+
+      if (originalPixels > maxPixels) {
+        const scale = Math.sqrt(maxPixels / originalPixels);
+        targetWidth = Math.round(originalWidth * scale);
+        targetHeight = Math.round(originalHeight * scale);
+        console.log(`Downscaling: ${originalWidth}x${originalHeight} -> ${targetWidth}x${targetHeight}`);
+      }
+
+      const {
+        data: rgbData,
+        width,
+        height,
+        padX,
+        padY,
+        resizeScale,
+      } = targetWidth !== initialDecode.width || targetHeight !== initialDecode.height
+        ? await decodeImageToRGB(imagePath, targetWidth, targetHeight)
+        : initialDecode;
+
+      const detectionModel = VISION_MODELS.find(m => m.type === 'detection');
+      const isRetinaFace = detectionModel?.filename.includes('retinaface');
+
+      const tensorData = isRetinaFace
+        ? rgbToTensorRetinaFace(rgbData, width, height)
+        : rgbToTensor(rgbData, width, height);
+
+      const detections = await faceService.detectFaces(tensorData, width, height);
+
+      const embeddings: Float32Array[] = [];
+      const ageGenderResults: Array<{ age: number; gender: string; confidence: number }> = [];
+
+      for (let i = 0; i < detections.length; i++) {
+        try {
+          const faceCrop112 = faceService.cropAlignFace(tensorData, width, height, detections[i], 112);
+          const embeddingResult = await faceService.extractEmbedding(faceCrop112, 112, 112);
+          embeddings.push(embeddingResult.embedding);
+
+          const faceCrop96 = faceService.cropAlignFace(tensorData, width, height, detections[i], 96);
+          const ageGenderResult = await faceService.estimateAgeGender(faceCrop96, 96, 96);
+          ageGenderResults.push({
+            age: ageGenderResult.age,
+            gender: ageGenderResult.gender,
+            confidence: ageGenderResult.genderConfidence,
+          });
+        } catch (err) {
+          console.error(`Failed to process face ${i + 1}:`, err);
+        }
+      }
+
+      const processingTime = Date.now() - startTime;
+
+      const result: TestResult = {
+        imageUri: imagePath,
+        detectionCount: detections.length,
+        detections,
+        embeddings,
+        ageGenderResults,
+        processingTime,
+        imageWidth: width,
+        imageHeight: height,
+        originalWidth,
+        originalHeight,
+        padX: padX || 0,
+        padY: padY || 0,
+        resizeScale: resizeScale || 1.0,
+      };
+
+      setTestResult2(result);
+
+      Alert.alert(
+        'Image 2 Processed',
+        `Found ${detections.length} face(s)\nReady to compare!`,
+      );
+    } catch (error) {
+      console.error('Processing error:', error);
+      Alert.alert('Error', `Failed to process image 2: ${error}`);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -181,14 +322,52 @@ export const FaceRecognitionTestScreen: React.FC<Props> = ({ onBack }) => {
       const detections = await faceService.detectFaces(tensorData, width, height);
       console.log('Detections:', detections.length);
 
+      // 4. Extract embeddings and age/gender for each detected face
+      const embeddings: Float32Array[] = [];
+      const ageGenderResults: Array<{ age: number; gender: string; confidence: number }> = [];
+
+      for (let i = 0; i < detections.length; i++) {
+        try {
+          console.log(`Processing face ${i + 1}/${detections.length}...`);
+
+          // Extract embedding (if recognition model loaded)
+          try {
+            // Crop and align face to 112x112 for recognition
+            const faceCrop112 = faceService.cropAlignFace(tensorData, width, height, detections[i], 112);
+            const embeddingResult = await faceService.extractEmbedding(faceCrop112, 112, 112);
+            embeddings.push(embeddingResult.embedding);
+            console.log(`Face ${i + 1} embedding: ${embeddingResult.embedding.length}-d vector`);
+          } catch (err) {
+            console.log(`Recognition model not available: ${err}`);
+          }
+
+          // Estimate age/gender (if age-gender model loaded)
+          try {
+            // Crop and align face to 96x96 for age-gender
+            const faceCrop96 = faceService.cropAlignFace(tensorData, width, height, detections[i], 96);
+            const ageGenderResult = await faceService.estimateAgeGender(faceCrop96, 96, 96);
+            ageGenderResults.push({
+              age: ageGenderResult.age,
+              gender: ageGenderResult.gender,
+              confidence: ageGenderResult.genderConfidence,
+            });
+            console.log(`Face ${i + 1}: ${ageGenderResult.age}y, ${ageGenderResult.gender} (${(ageGenderResult.genderConfidence * 100).toFixed(1)}%)`);
+          } catch (err) {
+            console.log(`Age-gender model not available: ${err}`);
+          }
+        } catch (err) {
+          console.error(`Failed to process face ${i + 1}:`, err);
+        }
+      }
+
       const processingTime = Date.now() - startTime;
 
       const result: TestResult = {
         imageUri: selectedImage, // Keep original image for display
         detectionCount: detections.length,
         detections: detections,
-        embeddings: [],
-        ageGenderResults: [],
+        embeddings,
+        ageGenderResults,
         processingTime,
         imageWidth: width,
         imageHeight: height,
@@ -208,8 +387,11 @@ export const FaceRecognitionTestScreen: React.FC<Props> = ({ onBack }) => {
       setTestResult(result);
 
       Alert.alert(
-        'Detection Complete',
-        `Found ${detections.length} face(s) in ${processingTime}ms`,
+        'Processing Complete',
+        `Found ${detections.length} face(s)\n` +
+        `Embeddings: ${embeddings.length}\n` +
+        `Age/Gender: ${ageGenderResults.length}\n` +
+        `Time: ${processingTime}ms`,
       );
     } catch (error) {
       console.error('Processing error:', error);
@@ -217,6 +399,37 @@ export const FaceRecognitionTestScreen: React.FC<Props> = ({ onBack }) => {
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleCompareFaces = () => {
+    if (!testResult || !testResult2) {
+      Alert.alert('Error', 'Please process both images first');
+      return;
+    }
+
+    if (testResult.embeddings.length === 0 || testResult2.embeddings.length === 0) {
+      Alert.alert('Error', 'No face embeddings found in one or both images');
+      return;
+    }
+
+    // Compare first face from each image
+    const embedding1 = testResult.embeddings[0];
+    const embedding2 = testResult2.embeddings[0];
+
+    const similarity = faceService.compareFaces(embedding1, embedding2);
+    setComparisonScore(similarity);
+
+    const isSamePerson = similarity > 0.4;
+    const percentage = (similarity * 100).toFixed(1);
+
+    Alert.alert(
+      'Face Comparison Result',
+      `Similarity: ${percentage}%\n` +
+      `Match: ${isSamePerson ? 'SAME PERSON ✓' : 'DIFFERENT PEOPLE ✗'}\n\n` +
+      `Threshold: 40% (typical for same person)`,
+    );
+
+    console.log(`Face comparison: ${percentage}% similarity (${isSamePerson ? 'MATCH' : 'NO MATCH'})`);
   };
 
   const renderDownloadSection = () => (
@@ -337,6 +550,15 @@ export const FaceRecognitionTestScreen: React.FC<Props> = ({ onBack }) => {
                               {(detection.confidence * 100).toFixed(0)}%
                             </Text>
                           </View>
+
+                          {/* Age/Gender label */}
+                          {testResult.ageGenderResults[idx] && (
+                            <View style={[styles.confidenceLabel, { top: 25 }]}>
+                              <Text style={styles.confidenceText}>
+                                {testResult.ageGenderResults[idx].age}y {testResult.ageGenderResults[idx].gender}
+                              </Text>
+                            </View>
+                          )}
                         </View>
 
                         {/* Landmarks */}
@@ -401,6 +623,58 @@ export const FaceRecognitionTestScreen: React.FC<Props> = ({ onBack }) => {
               <Text style={styles.noteText}>
                 Note: Full pipeline implementation requires image processing utilities.
               </Text>
+            </View>
+          )}
+
+          {/* Face Comparison Section */}
+          {testResult && testResult.embeddings.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Compare with Another Face</Text>
+
+              <TouchableOpacity style={styles.button} onPress={handlePickImage2}>
+                <Text style={styles.buttonText}>Pick Second Image</Text>
+              </TouchableOpacity>
+
+              {selectedImage2 && !testResult2 && (
+                <TouchableOpacity
+                  style={[styles.button, isProcessing && styles.buttonDisabled]}
+                  onPress={() => processImage2(selectedImage2)}
+                  disabled={isProcessing}>
+                  {isProcessing ? (
+                    <ActivityIndicator color={colors.accent.primary} />
+                  ) : (
+                    <Text style={styles.buttonText}>Process Image 2</Text>
+                  )}
+                </TouchableOpacity>
+              )}
+
+              {selectedImage2 && testResult2 && (
+                <View style={styles.resultsContainer}>
+                  <Text style={styles.resultText}>Image 2: {testResult2.detectionCount} face(s)</Text>
+                  {testResult2.embeddings.length > 0 && (
+                    <TouchableOpacity
+                      style={styles.button}
+                      onPress={handleCompareFaces}>
+                      <Text style={styles.buttonText}>Compare Faces</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+
+              {comparisonScore !== null && (
+                <View style={[styles.resultsContainer, { backgroundColor: colors.background.secondary }]}>
+                  <Text style={styles.resultsTitle}>Comparison Result:</Text>
+                  <Text style={[styles.resultText, { fontSize: 24, fontWeight: 'bold' }]}>
+                    {(comparisonScore * 100).toFixed(1)}% Similar
+                  </Text>
+                  <Text style={[styles.resultText, { fontSize: 18, color: comparisonScore > 0.4 ? '#22c55e' : '#ef4444' }]}>
+                    {comparisonScore > 0.4 ? '✓ SAME PERSON' : '✗ DIFFERENT PEOPLE'}
+                  </Text>
+                  <Text style={styles.noteText}>
+                    Threshold: 40% (typical for same person match)
+                  </Text>
+                </View>
+              )}
             </View>
           )}
         </>

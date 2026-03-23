@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { ProviderInfo, ChatMessage, PeerRole } from '../network/PeerProtocol';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { COORDINATOR_URL } from '../config';
 
 export interface UserProfile {
   displayName: string;
@@ -34,6 +35,16 @@ export interface NodeStatistics {
   // Session stats
   sessionStartTime: number;
   lastActivityTime: number;
+}
+
+export type WorkerStatus = 'offline' | 'connecting' | 'online' | 'paused';
+
+export interface WorkerStatistics {
+  tasksProcessed: number;
+  tasksFailed: number;
+  totalDetections: number;
+  avgProcessingTimeMs: number;
+  sessionStartTime: number;
 }
 
 interface AppState {
@@ -85,6 +96,19 @@ interface AppState {
   // Local inference mode (provider using own device)
   localInferenceMode: boolean;
 
+  // Image Worker
+  imageWorkerEnabled: boolean;
+  imageWorkerStatus: WorkerStatus;
+  imageWorkerStats: WorkerStatistics;
+  imageWorkerLogs: Array<{
+    timestamp: number;
+    type: 'info' | 'success' | 'error';
+    message: string;
+  }>;
+  coordinatorUrl: string;
+  visionModelsDownloaded: boolean;
+  visionModelsLoaded: boolean;
+
   // Actions
   setPeerId: (id: string) => void;
   setRole: (role: PeerRole) => void;
@@ -131,6 +155,19 @@ interface AppState {
   loadNodeStats: () => Promise<void>;
   saveNodeStats: () => Promise<void>;
   reset: () => void;
+
+  // Image Worker Actions
+  setImageWorkerEnabled: (v: boolean) => Promise<void>;
+  loadImageWorkerEnabled: () => Promise<void>;
+  setImageWorkerStatus: (s: WorkerStatus) => void;
+  setImageWorkerStats: (stats: WorkerStatistics) => void;
+  updateImageWorkerStats: (stats: Partial<WorkerStatistics>) => void;
+  addImageWorkerLog: (type: 'info' | 'success' | 'error', message: string) => void;
+  clearImageWorkerLogs: () => void;
+  setCoordinatorUrl: (url: string) => Promise<void>;
+  loadCoordinatorUrl: () => Promise<void>;
+  setVisionModelsDownloaded: (v: boolean) => void;
+  setVisionModelsLoaded: (v: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -173,6 +210,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     sessionStartTime: Date.now(),
     lastActivityTime: Date.now(),
   },
+  imageWorkerEnabled: false,
+  imageWorkerStatus: 'offline',
+  imageWorkerStats: {
+    tasksProcessed: 0,
+    tasksFailed: 0,
+    totalDetections: 0,
+    avgProcessingTimeMs: 0,
+    sessionStartTime: 0,
+  },
+  imageWorkerLogs: [],
+  coordinatorUrl: COORDINATOR_URL,
+  visionModelsDownloaded: false,
+  visionModelsLoaded: false,
 
   setPeerId: (id) => set({ peerId: id }),
   setRole: (role) => set({ role }),
@@ -572,6 +622,72 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.error('[AppStore] Failed to save node stats:', e);
     }
   },
+
+  // Image Worker Actions
+  setImageWorkerEnabled: async (v) => {
+    set({ imageWorkerEnabled: v });
+    try {
+      await AsyncStorage.setItem('imageWorkerEnabled', v ? 'true' : 'false');
+    } catch (e) {
+      console.error('[AppStore] Failed to save worker enabled state:', e);
+    }
+  },
+
+  loadImageWorkerEnabled: async () => {
+    try {
+      const value = await AsyncStorage.getItem('imageWorkerEnabled');
+      if (value !== null) {
+        set({ imageWorkerEnabled: value === 'true' });
+      }
+    } catch (e) {
+      console.error('[AppStore] Failed to load worker enabled state:', e);
+    }
+  },
+
+  setImageWorkerStatus: (s) => set({ imageWorkerStatus: s }),
+
+  setImageWorkerStats: (stats) => set({ imageWorkerStats: stats }),
+
+  updateImageWorkerStats: (stats) => {
+    const current = get().imageWorkerStats;
+    set({ imageWorkerStats: { ...current, ...stats } });
+  },
+
+  addImageWorkerLog: (type, message) => {
+    const newLog = {
+      timestamp: Date.now(),
+      type,
+      message,
+    };
+    set((state) => ({
+      imageWorkerLogs: [newLog, ...state.imageWorkerLogs].slice(0, 100), // Keep last 100 logs
+    }));
+  },
+
+  clearImageWorkerLogs: () => set({ imageWorkerLogs: [] }),
+
+  setCoordinatorUrl: async (url) => {
+    set({ coordinatorUrl: url });
+    try {
+      await AsyncStorage.setItem('coordinatorUrl', url);
+    } catch (e) {
+      console.error('[AppStore] Failed to save coordinator URL:', e);
+    }
+  },
+
+  loadCoordinatorUrl: async () => {
+    try {
+      const url = await AsyncStorage.getItem('coordinatorUrl');
+      if (url) {
+        set({ coordinatorUrl: url });
+      }
+    } catch (e) {
+      console.error('[AppStore] Failed to load coordinator URL:', e);
+    }
+  },
+
+  setVisionModelsDownloaded: (v) => set({ visionModelsDownloaded: v }),
+  setVisionModelsLoaded: (v) => set({ visionModelsLoaded: v }),
 
   reset: () =>
     set({

@@ -18,14 +18,20 @@ import { NodeInfoPopup } from '../components/NodeInfoPopup';
 import { LogsPopup } from '../components/LogsPopup';
 import { Sidebar } from '../components/Sidebar';
 import { relayClient } from '../network/RelayClient';
+import { VisionWorkerService } from '../services/VisionWorkerService';
+import { VisionModelDownloader } from '../services/VisionModelDownloader';
+import { FaceRecognitionService } from '../services/FaceRecognitionService';
+import { llamaEngine } from '../inference/LlamaEngine';
+import { COORDINATOR_URL } from '../config';
 
 interface Props {
   onSelectRole: () => void;
   onOpenProfile: () => void;
   onOpenFaceTest?: () => void;
+  onOpenImageWorker?: () => void;
 }
 
-export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest }: Props) {
+export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest, onOpenImageWorker }: Props) {
   const connected = useAppStore((s) => s.connected);
   const modelDownloaded = useAppStore((s) => s.modelDownloaded);
   const modelLoaded = useAppStore((s) => s.modelLoaded);
@@ -44,10 +50,23 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
   const peerId = useAppStore((s) => s.peerId);
   const setSelectedProvider = useAppStore((s) => s.setSelectedProvider);
   const addLog = useAppStore((s) => s.addLog);
+
+  // Image Worker state
+  const imageWorkerEnabled = useAppStore((s) => s.imageWorkerEnabled);
+  const setImageWorkerEnabled = useAppStore((s) => s.setImageWorkerEnabled);
+  const imageWorkerStatus = useAppStore((s) => s.imageWorkerStatus);
+  const imageWorkerStats = useAppStore((s) => s.imageWorkerStats);
+  const visionModelsDownloaded = useAppStore((s) => s.visionModelsDownloaded);
+  const visionModelsLoaded = useAppStore((s) => s.visionModelsLoaded);
+  const setVisionModelsDownloaded = useAppStore((s) => s.setVisionModelsDownloaded);
+  const setVisionModelsLoaded = useAppStore((s) => s.setVisionModelsLoaded);
+  const setModelLoaded = useAppStore((s) => s.setModelLoaded);
+
   const [showNodeInfo, setShowNodeInfo] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
   const [greeting, setGreeting] = useState('');
+  const [batteryLevel, setBatteryLevel] = useState(100);
 
   // Get time-based greeting - memoized for efficiency
   const getGreeting = useCallback(() => {
@@ -87,6 +106,18 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
   // Handle provider mode toggle with battery check
   const handleProviderToggle = async (value: boolean) => {
     if (value) {
+      // Check if LLM model is downloaded
+      if (!modelDownloaded) {
+        Toast.show({
+          type: 'error',
+          text1: 'llm model required',
+          text2: 'please download the model from profile settings',
+          position: 'top',
+          visibilityTime: 4000,
+        });
+        return;
+      }
+
       // Check battery level before enabling
       try {
         const level = await DeviceInfo.getBatteryLevel();
@@ -105,10 +136,110 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
       } catch (error) {
         console.error('Error checking battery level:', error);
       }
+
+      // MUTUAL EXCLUSIVITY: Disable worker mode if enabled
+      if (imageWorkerEnabled) {
+        await setImageWorkerEnabled(false);
+        const workerService = VisionWorkerService.getInstance();
+        await workerService.stopWorkerMode();
+        try {
+          const faceService = FaceRecognitionService.getInstance();
+          await faceService.release();
+        } catch (error) {
+          console.warn('Error releasing vision models:', error);
+        }
+        setVisionModelsLoaded(false);
+        addLog('⚠️ Worker mode disabled - provider mode enabled');
+      }
     }
 
     // Battery is sufficient or turning off - proceed
     setProviderModeEnabled(value);
+  };
+
+  // Handle worker mode toggle
+  const handleWorkerToggle = async (value: boolean) => {
+    if (value) {
+      // Check if vision models are downloaded
+      if (!visionModelsDownloaded) {
+        Toast.show({
+          type: 'info',
+          text1: 'vision models required',
+          text2: 'please download models from profile settings',
+          position: 'top',
+          visibilityTime: 3000,
+        });
+        // Navigate to ProfileScreen
+        if (onOpenProfile) {
+          onOpenProfile();
+        }
+        return;
+      }
+
+      // Check battery level
+      try {
+        const level = await DeviceInfo.getBatteryLevel();
+        const batteryPercent = Math.round(level * 100);
+
+        if (batteryPercent < batteryThreshold) {
+          Toast.show({
+            type: 'error',
+            text1: 'battery too low',
+            text2: `please charge above ${batteryThreshold}% to enable worker mode`,
+            position: 'top',
+            visibilityTime: 4000,
+          });
+          return;
+        }
+      } catch (error) {
+        console.error('Error checking battery level:', error);
+      }
+
+      // MUTUAL EXCLUSIVITY: Disable provider mode if enabled
+      if (providerModeEnabled) {
+        await setProviderModeEnabled(false);
+        await llamaEngine.unload();
+        setModelLoaded(false);
+        addLog('⚠️ Provider mode disabled - worker mode enabled');
+      }
+
+      // Load vision models if not already loaded
+      if (!visionModelsLoaded) {
+        Toast.show({
+          type: 'info',
+          text1: 'loading vision models...',
+          text2: 'this may take a moment',
+          position: 'top',
+        });
+
+        try {
+          const faceService = FaceRecognitionService.getInstance();
+          await faceService.initialize();
+          setVisionModelsLoaded(true);
+          addLog('✅ Vision models loaded successfully');
+        } catch (error) {
+          Toast.show({
+            type: 'error',
+            text1: 'failed to load models',
+            text2: 'could not initialize vision models',
+            position: 'top',
+          });
+          addLog('❌ Failed to load vision models');
+          return;
+        }
+      }
+
+      await setImageWorkerEnabled(true);
+
+      // Navigate to ImageWorkerScreen to complete setup
+      if (onOpenImageWorker) {
+        onOpenImageWorker();
+      }
+    } else {
+      await setImageWorkerEnabled(false);
+      const workerService = VisionWorkerService.getInstance();
+      await workerService.stopWorkerMode();
+    }
   };
 
   // Load chat history and logs on mount
@@ -116,6 +247,127 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
     loadChatHistory();
     loadLogs();
   }, []);
+
+  // Check vision models status on mount
+  useEffect(() => {
+    const checkVisionModels = async () => {
+      const downloader = VisionModelDownloader.getInstance();
+      const downloaded = await downloader.areAllModelsDownloaded();
+      setVisionModelsDownloaded(downloaded);
+    };
+    checkVisionModels();
+  }, []);
+
+  // Monitor battery level
+  useEffect(() => {
+    const updateBattery = async () => {
+      try {
+        const level = await DeviceInfo.getBatteryLevel();
+        setBatteryLevel(Math.round(level * 100));
+      } catch (error) {
+        console.error('Error getting battery level:', error);
+      }
+    };
+
+    updateBattery();
+    const interval = setInterval(updateBattery, 30000); // Update every 30s
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Auto-start worker mode on app launch if enabled
+  useEffect(() => {
+    const autoStartWorker = async () => {
+      console.log('[HomeScreen] 🔍 Checking for auto-start worker mode...');
+      console.log('[HomeScreen] imageWorkerEnabled:', imageWorkerEnabled);
+      console.log('[HomeScreen] visionModelsDownloaded:', visionModelsDownloaded);
+      console.log('[HomeScreen] connected:', connected);
+
+      if (!imageWorkerEnabled) {
+        console.log('[HomeScreen] ❌ Worker mode not enabled in store - skipping auto-start');
+        return;
+      }
+
+      if (!visionModelsDownloaded) {
+        console.log('[HomeScreen] ❌ Vision models not downloaded - skipping auto-start');
+        return;
+      }
+
+      if (!connected) {
+        console.log('[HomeScreen] ❌ Not connected to relay - will retry when connected');
+        return;
+      }
+
+      // Check battery level
+      try {
+        const level = await DeviceInfo.getBatteryLevel();
+        const batteryPercent = Math.round(level * 100);
+        console.log('[HomeScreen] 🔋 Battery level:', batteryPercent);
+
+        if (batteryPercent < batteryThreshold) {
+          console.log(`[HomeScreen] ❌ Battery too low (${batteryPercent}% < ${batteryThreshold}%) - skipping auto-start`);
+          addLog(`⚠️ Worker mode auto-start skipped: battery too low (${batteryPercent}%)`);
+          return;
+        }
+      } catch (error) {
+        console.error('[HomeScreen] Error checking battery level:', error);
+      }
+
+      // Load vision models if not already loaded
+      if (!visionModelsLoaded) {
+        console.log('[HomeScreen] 📦 Loading vision models for auto-start...');
+        addLog('🔄 Auto-loading vision models...');
+
+        try {
+          const faceService = FaceRecognitionService.getInstance();
+          await faceService.initialize();
+          setVisionModelsLoaded(true);
+          console.log('[HomeScreen] ✅ Vision models loaded successfully');
+          addLog('✅ Vision models loaded successfully');
+        } catch (error) {
+          console.error('[HomeScreen] ❌ Failed to load vision models:', error);
+          addLog('❌ Failed to auto-load vision models');
+          return;
+        }
+      }
+
+      // Start worker service
+      console.log('[HomeScreen] 🚀 Auto-starting worker mode...');
+      addLog('🚀 Auto-starting worker mode...');
+
+      try {
+        const workerService = VisionWorkerService.getInstance();
+        const displayName = userProfile?.displayName || 'Anonymous';
+
+        console.log('[HomeScreen] Starting worker service with:', { displayName, coordinatorUrl: COORDINATOR_URL });
+        await workerService.startWorkerMode(displayName, COORDINATOR_URL);
+        console.log('[HomeScreen] ✅ Worker mode auto-started successfully');
+        addLog('✅ Worker mode auto-started successfully');
+
+        Toast.show({
+          type: 'success',
+          text1: 'worker mode active',
+          text2: 'contributing to network',
+          position: 'top',
+          visibilityTime: 3000,
+        });
+      } catch (error) {
+        console.error('[HomeScreen] ❌ Failed to auto-start worker mode:', error);
+        addLog(`❌ Failed to auto-start worker: ${error}`);
+        Toast.show({
+          type: 'error',
+          text1: 'worker auto-start failed',
+          text2: 'please restart manually',
+          position: 'top',
+          visibilityTime: 4000,
+        });
+      }
+    };
+
+    // Delay auto-start slightly to allow app initialization to complete
+    const timer = setTimeout(autoStartWorker, 2000);
+    return () => clearTimeout(timer);
+  }, [imageWorkerEnabled, visionModelsDownloaded, connected, visionModelsLoaded, batteryThreshold, userProfile, addLog]);
 
   // Registration updates are handled globally in App.tsx
   // No need to duplicate here to avoid race conditions
@@ -200,6 +452,55 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
             chat using your local model or connect to online providers.
           </Text>
 
+          {/* Image Worker Mode */}
+          {onOpenImageWorker && (
+            <View style={styles.workerSection}>
+              <View style={styles.workerHeader}>
+                <TouchableOpacity
+                  style={styles.workerInfo}
+                  onPress={onOpenImageWorker}
+                  activeOpacity={0.85}
+                >
+                  <View style={styles.workerTitleRow}>
+                    <Icon name="cpu" size={18} color={colors.accent.primary} />
+                    <Text style={styles.workerTitle}>image worker</Text>
+                    <Icon name="chevron-right" size={16} color={colors.text.tertiary} />
+                  </View>
+                  <Text style={styles.workerDesc}>
+                    contribute device vision processing to the network
+                  </Text>
+                </TouchableOpacity>
+                <Switch
+                  value={imageWorkerEnabled}
+                  onValueChange={handleWorkerToggle}
+                  trackColor={{ false: colors.input.border, true: colors.accent.primary }}
+                  thumbColor={imageWorkerEnabled ? colors.button.secondaryText : colors.text.tertiary}
+                  disabled={!visionModelsDownloaded || batteryLevel < batteryThreshold}
+                />
+              </View>
+              <View style={styles.workerStats}>
+                <View style={styles.workerStat}>
+                  <Text style={styles.workerStatLabel}>status</Text>
+                  <Text style={[
+                    styles.workerStatValue,
+                    {
+                      color: imageWorkerStatus === 'online' ? colors.status.success :
+                             imageWorkerStatus === 'connecting' ? colors.accent.secondary :
+                             imageWorkerStatus === 'paused' ? colors.status.warning :
+                             colors.text.tertiary
+                    }
+                  ]}>
+                    {imageWorkerStatus}
+                  </Text>
+                </View>
+                <View style={styles.workerStat}>
+                  <Text style={styles.workerStatLabel}>processed</Text>
+                  <Text style={styles.workerStatValue}>{imageWorkerStats.tasksProcessed}</Text>
+                </View>
+              </View>
+            </View>
+          )}
+
           {/* Provider Mode Toggle */}
           <View style={styles.providerSection}>
             <View style={styles.providerHeader}>
@@ -237,6 +538,7 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
             <Text style={styles.startButtonText}>start chat</Text>
           </TouchableOpacity>
 
+          {/* Face recognition test button - commented out for now
           {onOpenFaceTest && (
             <TouchableOpacity
               style={[styles.startButton, { backgroundColor: colors.darkGray, marginTop: 10 }]}
@@ -246,6 +548,7 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
               <Text style={[styles.startButtonText, { color: colors.cream }]}>test face recognition</Text>
             </TouchableOpacity>
           )}
+          */}
 
           <Text style={styles.footer}>
             all inference is private · end-to-end encrypted
@@ -491,6 +794,64 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.status.success,
     textAlign: 'center',
+    fontFamily: fonts.regular,
+  },
+  // Image Worker Section
+  workerSection: {
+    backgroundColor: colors.terminal.background,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 24,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: colors.terminal.greenDim,
+  },
+  workerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  workerInfo: {
+    flex: 1,
+  },
+  workerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  workerTitle: {
+    fontSize: 16,
+    color: colors.accent.primary,
+    fontFamily: fonts.regular,
+  },
+  workerDesc: {
+    fontSize: 13,
+    color: colors.text.tertiary,
+    lineHeight: 18,
+    fontFamily: fonts.regular,
+  },
+  workerStats: {
+    flexDirection: 'row',
+    gap: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.terminal.greenDim,
+  },
+  workerStat: {
+    flex: 1,
+  },
+  workerStatLabel: {
+    fontSize: 10,
+    color: colors.text.tertiary,
+    marginBottom: 2,
+    fontFamily: fonts.regular,
+    letterSpacing: 0.5,
+  },
+  workerStatValue: {
+    fontSize: 16,
+    color: colors.accent.primary,
     fontFamily: fonts.regular,
   },
 });

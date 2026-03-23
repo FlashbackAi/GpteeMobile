@@ -163,7 +163,8 @@ export class FaceRecognitionService {
     }
 
     try {
-      const inputTensor = new Tensor('float32', faceImageData, [1, 3, 112, 112]);
+      // Age-gender model expects 96x96 input (not 112x112)
+      const inputTensor = new Tensor('float32', faceImageData, [1, 3, width, height]);
 
       const inputNames = this.ageGenderSession.inputNames;
       const feeds: Record<string, Tensor> = {};
@@ -750,20 +751,202 @@ export class FaceRecognitionService {
   }
 
   private parseAgeGenderResults(results: Record<string, Tensor>): AgeGenderResult {
-    // InsightFace age-gender output: [age, gender_prob]
+    // InsightFace Buffalo_L genderage.onnx output format:
+    // - Indices 0-1: Gender logits [male_logit, female_logit]
+    // - Index 2: Age value normalized 0-1 (multiply by 100 for years)
     const output = results['output'] || results[Object.keys(results)[0]];
     const data = output.data as Float32Array;
 
-    // Age is typically first value, gender probability second
-    const age = Math.round(data[0]);
-    const genderProb = data[1];
-    const gender = genderProb > 0.5 ? 'M' : 'F';
+    if (data.length !== 3) {
+      console.error(`Invalid genderage output: expected 3 values, got ${data.length}`);
+      return {
+        age: 0,
+        gender: 'M',
+        genderConfidence: 0,
+      };
+    }
+
+    // Extract gender from logits (argmax of first 2 values)
+    const maleLogit = data[0];
+    const femaleLogit = data[1];
+    const genderIdx = maleLogit > femaleLogit ? 0 : 1; // 0=Male, 1=Female
+    const gender = genderIdx === 0 ? 'M' : 'F';
+
+    // Apply softmax to get confidence
+    const expMale = Math.exp(maleLogit);
+    const expFemale = Math.exp(femaleLogit);
+    const sumExp = expMale + expFemale;
+    const maleProb = expMale / sumExp;
+    const femaleProb = expFemale / sumExp;
+    const genderConfidence = Math.max(maleProb, femaleProb);
+
+    // Extract age (denormalize from 0-1 to 0-100)
+    const age = Math.round(data[2] * 100);
+
+    console.log(`Parsed: ${age}y, ${gender} (${(genderConfidence * 100).toFixed(1)}%)`);
 
     return {
       age,
       gender,
-      genderConfidence: genderProb > 0.5 ? genderProb : 1 - genderProb,
+      genderConfidence,
     };
+  }
+
+  /**
+   * Calculate cosine similarity between two face embeddings
+   * Returns similarity score: 0.0 (different) to 1.0 (identical)
+   * Typical threshold: > 0.4 = same person
+   */
+  compareFaces(embedding1: Float32Array, embedding2: Float32Array): number {
+    if (embedding1.length !== embedding2.length) {
+      throw new Error(`Embedding dimension mismatch: ${embedding1.length} vs ${embedding2.length}`);
+    }
+
+    // Calculate cosine similarity
+    let dotProduct = 0;
+    let norm1 = 0;
+    let norm2 = 0;
+
+    for (let i = 0; i < embedding1.length; i++) {
+      dotProduct += embedding1[i] * embedding2[i];
+      norm1 += embedding1[i] * embedding1[i];
+      norm2 += embedding2[i] * embedding2[i];
+    }
+
+    const similarity = dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
+    return similarity;
+  }
+
+  /**
+   * Crop and align face from full image for recognition/age-gender
+   * Returns normalized face patch of specified size
+   */
+  cropAlignFace(
+    fullImageData: Float32Array,
+    fullWidth: number,
+    fullHeight: number,
+    detection: DetectionResult,
+    targetSize: number = 112,
+  ): Float32Array {
+    const faceData = new Float32Array(3 * targetSize * targetSize);
+
+    // Get bbox with padding
+    const bbox = detection.bbox;
+    const padding = 0.3; // 30% padding around face
+    const w = bbox.width;
+    const h = bbox.height;
+    const cx = bbox.x + w / 2;
+    const cy = bbox.y + h / 2;
+    const size = Math.max(w, h) * (1 + padding);
+
+    const x1 = Math.max(0, Math.floor(cx - size / 2));
+    const y1 = Math.max(0, Math.floor(cy - size / 2));
+    const x2 = Math.min(fullWidth, Math.ceil(cx + size / 2));
+    const y2 = Math.min(fullHeight, Math.ceil(cy + size / 2));
+
+    const cropW = x2 - x1;
+    const cropH = y2 - y1;
+
+    // Simple bilinear resize from crop to 112x112
+    for (let c = 0; c < 3; c++) {
+      for (let y = 0; y < targetSize; y++) {
+        for (let x = 0; x < targetSize; x++) {
+          // Map target coords to source coords
+          const srcX = x1 + (x / targetSize) * cropW;
+          const srcY = y1 + (y / targetSize) * cropH;
+
+          const x0 = Math.floor(srcX);
+          const y0 = Math.floor(srcY);
+          const x1_coord = Math.min(x0 + 1, fullWidth - 1);
+          const y1_coord = Math.min(y0 + 1, fullHeight - 1);
+
+          const dx = srcX - x0;
+          const dy = srcY - y0;
+
+          // Bilinear interpolation
+          const v00 = fullImageData[c * fullWidth * fullHeight + y0 * fullWidth + x0];
+          const v10 = fullImageData[c * fullWidth * fullHeight + y0 * fullWidth + x1_coord];
+          const v01 = fullImageData[c * fullWidth * fullHeight + y1_coord * fullWidth + x0];
+          const v11 = fullImageData[c * fullWidth * fullHeight + y1_coord * fullWidth + x1_coord];
+
+          const value = v00 * (1 - dx) * (1 - dy) +
+                       v10 * dx * (1 - dy) +
+                       v01 * (1 - dx) * dy +
+                       v11 * dx * dy;
+
+          faceData[c * targetSize * targetSize + y * targetSize + x] = value;
+        }
+      }
+    }
+
+    return faceData;
+  }
+
+  /**
+   * High-level method to detect and analyze faces from an image file
+   * @param imagePath - Local file path to the image
+   * @param maxDimension - Maximum dimension to resize the image (default: 2600)
+   * @returns Detection results with age/gender analysis
+   */
+  async detectAndAnalyzeFaces(imagePath: string, maxDimension: number = 2600): Promise<{
+    detections: Array<{
+      bbox: { x: number; y: number; width: number; height: number };
+      confidence: number;
+      age?: number;
+      gender?: string;
+      genderConfidence?: number;
+    }>;
+  }> {
+    if (!this.isInitialized) {
+      throw new Error('FaceRecognitionService not initialized');
+    }
+
+    // Load and preprocess image using native ImageDecoder
+    const ImageUtils = require('../utils/ImageUtils').default;
+    const { imageData, width, height } = await ImageUtils.loadAndPreprocessImage(imagePath, maxDimension);
+
+    // Detect faces
+    const detections = await this.detectFaces(imageData, width, height);
+
+    // Analyze each face for age/gender
+    const results = [];
+    for (const detection of detections) {
+      const bbox = detection.bbox;
+
+      // Crop and align face to 96x96 for age-gender estimation
+      // Using the same method as FaceRecognitionTestScreen
+      try {
+        const faceCrop96 = this.cropAlignFace(imageData, width, height, detection, 96);
+        const ageGender = await this.estimateAgeGender(faceCrop96, 96, 96);
+
+        results.push({
+          bbox: {
+            x: bbox.x,
+            y: bbox.y,
+            width: bbox.width,
+            height: bbox.height,
+          },
+          confidence: detection.confidence,
+          age: ageGender.age,
+          gender: ageGender.gender,
+          genderConfidence: ageGender.genderConfidence,
+        });
+      } catch (error) {
+        console.warn('[FaceRecognition] Failed to analyze face:', error);
+        // Still include detection without age/gender
+        results.push({
+          bbox: {
+            x: bbox.x,
+            y: bbox.y,
+            width: bbox.width,
+            height: bbox.height,
+          },
+          confidence: detection.confidence,
+        });
+      }
+    }
+
+    return { detections: results };
   }
 
   async release(): Promise<void> {

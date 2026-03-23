@@ -25,6 +25,7 @@
     "react-native-fs": "^2.20.0",
     "react-native-get-random-values": "^1.11.0",
     "react-native-image-picker": "^8.2.1",
+    "react-native-sqlite-storage": "^6.0.1",
     "react-native-toast-message": "^2.3.3",
     "react-native-url-polyfill": "^2.0.0",
     "react-native-vector-icons": "^10.3.0",
