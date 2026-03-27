@@ -8,12 +8,17 @@
     "lint": "eslint .",
     "start": "react-native start",
     "test": "jest",
-    "postinstall": "node scripts/remove-opencl.js && patch-package"
+    "postinstall": "node scripts/remove-opencl.js && node scripts/postinstall.js && patch-package"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^1.23.1",
     "@react-native-community/image-editor": "^4.3.0",
+    "@solana-mobile/mobile-wallet-adapter-protocol": "^2.2.6",
+    "@solana-mobile/mobile-wallet-adapter-protocol-web3js": "^2.2.6",
+    "@solana/web3.js": "^1.98.4",
     "@types/crypto-js": "^4.2.2",
+    "axios": "^1.13.6",
+    "bs58": "^6.0.0",
     "buffer": "^6.0.3",
     "crypto-js": "^4.2.0",
     "events": "^3.3.0",
@@ -25,6 +30,7 @@
     "react-native-fs": "^2.20.0",
     "react-native-get-random-values": "^1.11.0",
     "react-native-image-picker": "^8.2.1",
+    "react-native-quick-crypto": "^0.7.5",
     "react-native-sqlite-storage": "^6.0.1",
     "react-native-toast-message": "^2.3.3",
     "react-native-url-polyfill": "^2.0.0",

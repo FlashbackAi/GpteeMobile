@@ -52,9 +52,13 @@ interface AppState {
   peerId: string;
   role: PeerRole | null;
 
+  // Authentication
+  isAuthenticated: boolean;
+  walletAddress: string | null;
+  nodeId: string | null;
+
   // User profile
   userProfile: UserProfile | null;
-  onboardingCompleted: boolean;
 
   // Connection
   connected: boolean;
@@ -113,6 +117,13 @@ interface AppState {
   setPeerId: (id: string) => void;
   setRole: (role: PeerRole) => void;
   setConnected: (v: boolean) => void;
+
+  // Auth Actions
+  setAuthenticated: (authenticated: boolean, walletAddress?: string, nodeId?: string) => void;
+  checkAuthStatus: () => Promise<boolean>;
+  handleAuthSuccess: (walletAddress: string, nodeId: string, peerId: string, displayName?: string) => Promise<void>;
+  handleLogout: () => Promise<void>;
+
   setUserProfile: (profile: UserProfile) => void;
   setOnboardingCompleted: (v: boolean) => void;
   loadUserProfile: () => Promise<void>;
@@ -174,8 +185,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   peerId: '',
   role: null,
   connected: false,
+  isAuthenticated: false,
+  walletAddress: null,
+  nodeId: null,
   userProfile: null,
-  onboardingCompleted: false,
   providerModeEnabled: false,
   modelLoaded: false,
   modelLoading: false,
@@ -228,32 +241,144 @@ export const useAppStore = create<AppState>((set, get) => ({
   setRole: (role) => set({ role }),
   setConnected: (v) => set({ connected: v }),
 
+  // Auth Actions
+  setAuthenticated: (authenticated, walletAddress, nodeId) => {
+    set({
+      isAuthenticated: authenticated,
+      walletAddress: walletAddress || null,
+      nodeId: nodeId || null,
+    });
+  },
+
+  checkAuthStatus: async () => {
+    try {
+      const { isAuthenticated } = await import('../api/httpClient');
+      const { getConnectedWallet, derivePeerId } = await import('../services/WalletService');
+
+      const [hasTokens, wallet, storedProfile, storedNodeId] = await Promise.all([
+        isAuthenticated(),
+        getConnectedWallet(),
+        AsyncStorage.getItem('user_profile'),
+        AsyncStorage.getItem('node_id'),
+      ]);
+
+      const authenticated = hasTokens && wallet !== null;
+
+      // Restore peerId from wallet on app reload
+      const peerId = wallet ? derivePeerId(wallet) : '';
+
+      // Restore userProfile from AsyncStorage
+      let userProfile = null;
+      if (storedProfile) {
+        try {
+          userProfile = JSON.parse(storedProfile);
+          console.log('[AppStore] Restored user profile:', userProfile);
+        } catch (parseError) {
+          console.error('[AppStore] Failed to parse stored profile:', parseError);
+        }
+      }
+
+      set({
+        isAuthenticated: authenticated,
+        walletAddress: wallet,
+        nodeId: storedNodeId || get().nodeId, // Restore nodeId
+        peerId: peerId || get().peerId, // Keep existing peerId if derivation fails
+        userProfile: userProfile || get().userProfile, // Restore userProfile
+      });
+
+      console.log('[AppStore] Auth status checked - authenticated:', authenticated, 'peerId:', peerId, 'displayName:', userProfile?.displayName, 'nodeId:', storedNodeId);
+
+      return authenticated;
+    } catch (error) {
+      console.error('[AppStore] Failed to check auth status:', error);
+      return false;
+    }
+  },
+
+  handleAuthSuccess: async (walletAddress, nodeId, peerId, displayName) => {
+    try {
+      // Update authentication state
+      set({
+        isAuthenticated: true,
+        walletAddress,
+        nodeId,
+        peerId,
+      });
+
+      // Save nodeId to AsyncStorage for persistence
+      if (nodeId) {
+        await AsyncStorage.setItem('node_id', nodeId);
+      }
+
+      // Update user profile with display name if provided
+      if (displayName) {
+        const currentProfile = get().userProfile;
+        const profileData = {
+          displayName,
+          gender: currentProfile?.gender || 'prefer-not-to-say',
+          dateOfBirth: currentProfile?.dateOfBirth || '',
+        };
+
+        set({
+          userProfile: profileData,
+        });
+
+        // Save to AsyncStorage
+        await AsyncStorage.setItem('user_profile', JSON.stringify(profileData));
+        console.log('[AppStore] Saved user profile to AsyncStorage:', profileData);
+      }
+
+      // Update RelayClient with new peer ID
+      const { relayClient } = await import('../network/RelayClient');
+      if (relayClient && relayClient.updatePeerIdFromWallet) {
+        await relayClient.updatePeerIdFromWallet(walletAddress);
+      }
+
+      console.log('[AppStore] Auth success handled - peerId:', peerId, 'displayName:', displayName, 'nodeId:', nodeId);
+    } catch (error) {
+      console.error('[AppStore] Failed to handle auth success:', error);
+    }
+  },
+
+  handleLogout: async () => {
+    try {
+      const { logout } = await import('../services/AuthService');
+      const { clearAuthTokens } = await import('../api/httpClient');
+
+      await Promise.all([
+        logout(),
+        clearAuthTokens(),
+      ]);
+
+      set({
+        isAuthenticated: false,
+        walletAddress: null,
+        nodeId: null,
+      });
+
+      console.log('[AppStore] Logout completed');
+    } catch (error) {
+      console.error('[AppStore] Logout failed:', error);
+      throw error;
+    }
+  },
+
   setUserProfile: async (profile) => {
-    set({ userProfile: profile, onboardingCompleted: true });
+    set({ userProfile: profile });
     try {
       await AsyncStorage.setItem('userProfile', JSON.stringify(profile));
-      await AsyncStorage.setItem('onboardingCompleted', 'true');
     } catch (e) {
       console.error('[AppStore] Failed to save user profile:', e);
     }
   },
 
-  setOnboardingCompleted: (v) => set({ onboardingCompleted: v }),
-
   loadUserProfile: async () => {
     try {
-      const [profileJson, onboardingValue] = await Promise.all([
-        AsyncStorage.getItem('userProfile'),
-        AsyncStorage.getItem('onboardingCompleted'),
-      ]);
+      const profileJson = await AsyncStorage.getItem('userProfile');
 
       if (profileJson) {
         const profile = JSON.parse(profileJson);
         set({ userProfile: profile });
-      }
-
-      if (onboardingValue === 'true') {
-        set({ onboardingCompleted: true });
       }
     } catch (e) {
       console.error('[AppStore] Failed to load user profile:', e);

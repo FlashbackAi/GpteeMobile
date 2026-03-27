@@ -50,7 +50,7 @@ export class VisionWorkerService {
 
   // WebSocket connection
   private ws: WebSocket | null = null;
-  private workerId: string = '';
+  private peerId: string = '';
   private displayName: string = '';
   private deviceModel: string = '';
   private chipVendor: string = 'qualcomm'; // TODO: Detect from device
@@ -121,11 +121,22 @@ export class VisionWorkerService {
         console.log('[VisionWorker] ✅ FaceRecognitionService already initialized');
       }
 
-      // Load device info
-      this.workerId = await DeviceInfo.getUniqueId();
+      // Load device info and peer ID from store (single source of truth)
+      const { useAppStore } = await import('../store/appStore');
+      const { peerId, walletAddress } = useAppStore.getState();
+
+      if (!walletAddress) {
+        throw new Error('No wallet connected. Please authenticate first.');
+      }
+
+      if (!peerId) {
+        throw new Error('No peer ID in store. Authentication may have failed.');
+      }
+
+      this.peerId = peerId;
       this.deviceModel = await DeviceInfo.getModel();
 
-      console.log(`[VisionWorker] Worker ID: ${this.workerId}`);
+      console.log(`[VisionWorker] Peer ID (from store): ${this.peerId}`);
       console.log(`[VisionWorker] Device: ${this.deviceModel}`);
 
       this.isInitialized = true;
@@ -300,9 +311,9 @@ export class VisionWorkerService {
     const message: WorkerRegisterMessage = {
       type: 'worker_register',
       id: uuidv4(),
-      from: this.workerId,
+      from: this.peerId,
       timestamp: Date.now(),
-      workerId: this.workerId,
+      workerId: this.peerId,
       workerInfo: {
         deviceName: this.displayName,
         deviceModel: this.deviceModel,
@@ -323,7 +334,7 @@ export class VisionWorkerService {
     };
 
     console.log('[VisionWorker] 📤 Sending worker_register message');
-    console.log('[VisionWorker] Worker ID:', this.workerId);
+    console.log('[VisionWorker] Peer ID:', this.peerId);
     console.log('[VisionWorker] Display Name:', this.displayName);
     console.log('[VisionWorker] Message type:', message.type);
 
@@ -335,9 +346,9 @@ export class VisionWorkerService {
     const message: WorkerDeregisterMessage = {
       type: 'worker_deregister',
       id: uuidv4(),
-      from: this.workerId,
+      from: this.peerId,
       timestamp: Date.now(),
-      workerId: this.workerId,
+      workerId: this.peerId,
     };
 
     this.sendMessage(message);
@@ -352,9 +363,9 @@ export class VisionWorkerService {
       const message: WorkerHeartbeatMessage = {
         type: 'worker_heartbeat',
         id: uuidv4(),
-        from: this.workerId,
+        from: this.peerId,
         timestamp: Date.now(),
-        workerId: this.workerId,
+        workerId: this.peerId,
         thermalStatus,
         batteryLevel,
         activeTasks: this.activeTasks.size,
@@ -377,9 +388,9 @@ export class VisionWorkerService {
     const message: WorkerStatusMessage = {
       type: 'worker_status',
       id: uuidv4(),
-      from: this.workerId,
+      from: this.peerId,
       timestamp: Date.now(),
-      workerId: this.workerId,
+      workerId: this.peerId,
       thermalStatus,
       batteryLevel,
       cpuUsagePercent: 0, // TODO: Implement
@@ -483,10 +494,10 @@ export class VisionWorkerService {
     const message: TaskAcceptMessage = {
       type: 'task_accept',
       id: uuidv4(),
-      from: this.workerId,
+      from: this.peerId,
       timestamp: Date.now(),
       taskId: task.taskId,
-      workerId: this.workerId,
+      workerId: this.peerId,
       estimatedCompletionMs: 5000, // TODO: Better estimation
     };
 
@@ -510,10 +521,10 @@ export class VisionWorkerService {
     const message: TaskRejectMessage = {
       type: 'task_reject',
       id: uuidv4(),
-      from: this.workerId,
+      from: this.peerId,
       timestamp: Date.now(),
       taskId: task.taskId,
-      workerId: this.workerId,
+      workerId: this.peerId,
       reason: reason as any,
       retryAfterMs: 30000,
     };
@@ -617,7 +628,7 @@ export class VisionWorkerService {
     const message: TaskResultMessage = {
       type: 'task_result',
       id: uuidv4(),
-      from: this.workerId,
+      from: this.peerId,
       timestamp: Date.now(),
       taskId: task.taskId,
       imageId: task.imageId,
@@ -653,10 +664,10 @@ export class VisionWorkerService {
     const message: TaskErrorMessage = {
       type: 'task_error',
       id: uuidv4(),
-      from: this.workerId,
+      from: this.peerId,
       timestamp: Date.now(),
       taskId: task.taskId,
-      workerId: this.workerId,
+      workerId: this.peerId,
       errorCode: 'MODEL_ERROR',
       errorMessage: error.message || 'Unknown error',
       retryable: true,
@@ -689,9 +700,9 @@ export class VisionWorkerService {
     const message: WorkerPauseMessage = {
       type: 'worker_pause',
       id: uuidv4(),
-      from: this.workerId,
+      from: this.peerId,
       timestamp: Date.now(),
-      workerId: this.workerId,
+      workerId: this.peerId,
       reason,
     };
 
@@ -707,9 +718,9 @@ export class VisionWorkerService {
     const message: WorkerResumeMessage = {
       type: 'worker_resume',
       id: uuidv4(),
-      from: this.workerId,
+      from: this.peerId,
       timestamp: Date.now(),
-      workerId: this.workerId,
+      workerId: this.peerId,
     };
 
     this.sendMessage(message);
@@ -763,8 +774,8 @@ export class VisionWorkerService {
     return { ...this.stats };
   }
 
-  public getWorkerId(): string {
-    return this.workerId;
+  public getPeerId(): string {
+    return this.peerId;
   }
 
   public getDisplayName(): string {

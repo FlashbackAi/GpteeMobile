@@ -10,17 +10,25 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
+ * Base server hostname/IP
+ * Change this value for different environments:
+ * - Development: 'localhost' or local network IP (e.g., '192.168.0.66')
+ * - Production: Your deployed server IP or domain (e.g., 'relay.gptee.org')
+ */
+const SERVER_HOST = '192.168.0.66';
+const SERVER_PORT = 9293;
+
+/**
  * Relay Server WebSocket URL
  * This is the main relay server for P2P communication and provider discovery.
- *
- * Development: Use your local machine's IP address
- * Production: Use your deployed server URL
- *
- * Examples:
- * - Local network: 'ws://192.168.0.66:9293'
- * - Production: 'ws://relay.gptee.org:9293'
  */
-export const RELAY_SERVER_URL = 'ws://13.126.31.242:9293';
+export const RELAY_SERVER_URL = `ws://${SERVER_HOST}:${SERVER_PORT}`;
+
+/**
+ * Backend API Base URL
+ * This is the HTTP REST API endpoint for authentication and data sync.
+ */
+export const API_BASE_URL = `http://${SERVER_HOST}:${SERVER_PORT}/api`;
 
 /**
  * Image Worker Coordinator WebSocket URL
@@ -29,7 +37,7 @@ export const RELAY_SERVER_URL = 'ws://13.126.31.242:9293';
  * For now, this points to the same relay server but could be separate
  * in a production deployment.
  */
-export const COORDINATOR_URL = 'ws://13.126.31.242:9293';
+export const COORDINATOR_URL = `ws://${SERVER_HOST}:${SERVER_PORT}`;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Worker Configuration
@@ -94,7 +102,7 @@ export const FEATURES = {
 
 export const APP_INFO = {
   name: 'GPTee',
-  tagline: 'gpt for everyone, free',
+  tagline: 'gpt for everyone, free.',
   version: '1.0.0',
   network: 'p2p ai inference network',
 };
@@ -105,6 +113,7 @@ export const APP_INFO = {
 
 export default {
   RELAY_SERVER_URL,
+  API_BASE_URL,
   COORDINATOR_URL,
   WORKER_CONFIG,
   FEATURES,

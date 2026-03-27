@@ -15,8 +15,8 @@ const config = {
       events: require.resolve('events'),
       util: require.resolve('util'),
     },
-    // Prioritize 'browser' field to resolve react-native-webrtc correctly
-    resolverMainFields: ['browser', 'main', 'react-native', 'module'],
+    // Prioritize 'react-native' field for native modules (MWA), then 'browser' for web polyfills
+    resolverMainFields: ['react-native', 'browser', 'main'],
     sourceExts: ['js', 'json', 'ts', 'tsx', 'jsx'],
   },
 };

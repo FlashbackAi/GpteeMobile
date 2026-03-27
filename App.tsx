@@ -9,7 +9,7 @@ import HomeScreen from './src/screens/HomeScreen';
 import ChatScreen from './src/screens/ChatScreen';
 import ChatHistoryScreen from './src/screens/ChatHistoryScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
-import OnboardingScreen from './src/screens/OnboardingScreen';
+import AuthScreen from './src/screens/AuthScreen';
 import { FaceRecognitionTestScreen } from './src/screens/FaceRecognitionTestScreen';
 import { ImageWorkerScreen } from './src/screens/ImageWorkerScreen';
 import { ChatMessage } from './src/network/PeerProtocol';
@@ -37,8 +37,8 @@ export default function App() {
     reset,
     messages,
     setMessages,
-    onboardingCompleted,
-    setUserProfile,
+    isAuthenticated,
+    checkAuthStatus,
     loadUserProfile,
     userProfile,
     setModelDownloaded,
@@ -72,6 +72,9 @@ export default function App() {
 
   useEffect(() => {
     const loadData = async () => {
+      // Check auth status first
+      await checkAuthStatus();
+
       await loadUserProfile();
       await loadProviderModeEnabled();
       await loadLocalInferenceMode();
@@ -162,11 +165,16 @@ export default function App() {
     }
   };
 
-  // ── Connect to relay after data is loaded ─────────────────────────────────
+  // ── Connect to relay after data is loaded AND user is authenticated ──────
   useEffect(() => {
-    if (!dataLoaded) return; // Wait for provider mode and profile to load
+    if (!dataLoaded || !isAuthenticated) return; // Wait for auth and data to load
 
-    setPeerId(relayClient.getPeerId());
+    // Note: peerId is already set by handleAuthSuccess, no need to overwrite it
+    // Only sync it to UI if somehow missing
+    const currentPeerId = useAppStore.getState().peerId;
+    if (!currentPeerId || currentPeerId === '') {
+      setPeerId(relayClient.getPeerId());
+    }
 
     relayClient.onConnectionChange = (connected) => {
       setConnected(connected);
@@ -313,7 +321,7 @@ export default function App() {
     return () => {
       relayClient.disconnect();
     };
-  }, [dataLoaded]);
+  }, [dataLoaded, isAuthenticated]);
 
   // ── Update relay registration when model loads or provider mode changes ───
   useEffect(() => {
@@ -385,15 +393,16 @@ export default function App() {
     setMessages(session.messages);
   };
 
-  // ── Handle onboarding completion ───────────────────────────────────────────
-  const handleOnboardingComplete = (profile: UserProfile) => {
-    setUserProfile(profile);
+  // ── Handle auth success ───────────────────────────────────────────────────
+  const handleAuthSuccess = () => {
+    // Auth completed, proceed to app
+    console.log('[App] Auth success, proceeding to main app');
   };
 
   // ── Routing ───────────────────────────────────────────────────────────────
-  // Show onboarding if not completed
-  if (!onboardingCompleted) {
-    return <OnboardingScreen onComplete={handleOnboardingComplete} />;
+  // Show auth screen if not authenticated
+  if (!isAuthenticated) {
+    return <AuthScreen onAuthSuccess={handleAuthSuccess} />;
   }
 
   if (showProfile) {

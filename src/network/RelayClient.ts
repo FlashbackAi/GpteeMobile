@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   GPTeeMessage,
   RegisterMessage,
@@ -21,6 +22,7 @@ import {
 } from './PeerProtocol';
 import { WebRTCClient } from './WebRTCClient';
 import { RELAY_SERVER_URL } from '../config';
+import { getConnectedWallet, derivePeerId } from '../services/WalletService';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 export const RELAY_URL = RELAY_SERVER_URL;
@@ -76,13 +78,38 @@ class RelayClient {
   onInferenceError: OnInferenceError | null = null;
 
   constructor() {
-    this.peerId = this.getOrCreatePeerId();
+    // Read peerId from store (single source of truth)
+    // Will be updated via updatePeerIdFromStore() after authentication
+    this.peerId = 'peer_pending';
   }
 
-  // ── Peer ID persistence ─────────────────────────────────────────────────────
-  private getOrCreatePeerId(): string {
-    // In production use AsyncStorage — for now generate per session
-    return `peer_${uuidv4()}`;
+  /**
+   * Update peer ID from store (single source of truth)
+   * Called after successful authentication via handleAuthSuccess
+   */
+  async updatePeerIdFromWallet(walletAddress: string): Promise<void> {
+    // Import store to read peerId
+    const { useAppStore } = await import('../store/appStore');
+    const newPeerId = useAppStore.getState().peerId;
+
+    if (!newPeerId) {
+      console.error('[RelayClient] No peerId in store');
+      return;
+    }
+
+    const oldPeerId = this.peerId;
+
+    if (oldPeerId !== newPeerId) {
+      this.peerId = newPeerId;
+      console.log(`[RelayClient] Peer ID updated from store: ${oldPeerId} -> ${newPeerId}`);
+
+      // If connected, need to re-register with new peer ID
+      if (this.connected) {
+        console.log('[RelayClient] Reconnecting with new peer ID...');
+        await this.disconnect();
+        await this.connect(this.role);
+      }
+    }
   }
 
   getPeerId(): string {
@@ -134,7 +161,18 @@ class RelayClient {
   }
 
   // ── Connect ─────────────────────────────────────────────────────────────────
-  connect(role: PeerRole, deviceInfo: RegisterMessage['deviceInfo']) {
+  async connect(role: PeerRole, deviceInfo: RegisterMessage['deviceInfo']) {
+    // Ensure peerId is set from store before connecting
+    const { useAppStore } = await import('../store/appStore');
+    const storePeerId = useAppStore.getState().peerId;
+
+    if (storePeerId) {
+      this.peerId = storePeerId;
+      console.log('[RelayClient] Using peerId from store:', this.peerId);
+    } else {
+      console.warn('[RelayClient] No peerId in store, using pending:', this.peerId);
+    }
+
     this.role = role;
     this.openSocket(deviceInfo);
   }

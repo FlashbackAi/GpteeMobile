@@ -367,7 +367,7 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
     // Delay auto-start slightly to allow app initialization to complete
     const timer = setTimeout(autoStartWorker, 2000);
     return () => clearTimeout(timer);
-  }, [imageWorkerEnabled, visionModelsDownloaded, connected, visionModelsLoaded, batteryThreshold, userProfile, addLog]);
+  }, [imageWorkerEnabled, visionModelsDownloaded, connected, visionModelsLoaded, batteryThreshold, userProfile?.displayName, addLog]);
 
   // Registration updates are handled globally in App.tsx
   // No need to duplicate here to avoid race conditions

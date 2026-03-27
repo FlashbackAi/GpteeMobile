@@ -38,10 +38,12 @@ export const ImageWorkerScreen: React.FC<ImageWorkerScreenProps> = ({ onBack }) 
   const visionModelsDownloaded = useAppStore((s) => s.visionModelsDownloaded);
   const visionModelsLoaded = useAppStore((s) => s.visionModelsLoaded);
   const batteryThreshold = useAppStore((s) => s.batteryThreshold);
+  const peerId = useAppStore((s) => s.peerId); // Read from store instead of local state
 
-  // Local UI state
-  const [deviceId, setDeviceId] = useState<string>('');
-  const [displayName, setDisplayName] = useState<string>('');
+  // Derive displayName from store
+  const displayName = userProfile?.displayName || 'Unknown Worker';
+
+  // Local UI state (non-identity data only)
   const [batteryLevel, setBatteryLevel] = useState<number>(0);
   const [thermalStatus, setThermalStatus] = useState<ThermalStatus>('nominal');
   const [uptime, setUptime] = useState(0);
@@ -112,21 +114,9 @@ export const ImageWorkerScreen: React.FC<ImageWorkerScreenProps> = ({ onBack }) 
   }, [workerStats.tasksFailed, addWorkerLog]);
 
   const loadDeviceInfo = async () => {
-    try {
-      // Get device unique ID
-      const uniqueId = await DeviceInfo.getUniqueId();
-      setDeviceId(uniqueId);
-
-      // Use user profile display name if available, otherwise use device name
-      if (userProfile?.displayName) {
-        setDisplayName(userProfile.displayName);
-      } else {
-        const deviceName = await DeviceInfo.getDeviceName();
-        setDisplayName(deviceName);
-      }
-    } catch (error) {
-      console.error('Error loading device info:', error);
-    }
+    // Identity data (peerId, displayName) now comes from store
+    // No need to load anything - just log for debugging
+    console.log('[ImageWorkerScreen] Identity from store - peerId:', peerId, 'displayName:', displayName);
   };
 
   const loadBatteryInfo = async () => {
@@ -454,7 +444,7 @@ export const ImageWorkerScreen: React.FC<ImageWorkerScreenProps> = ({ onBack }) 
               </View>
               <View style={styles.styledBox}>
                 <Text style={styles.styledBoxValue} numberOfLines={1}>
-                  {deviceId || 'loading...'}
+                  {peerId || 'loading...'}
                 </Text>
                 <Text style={styles.styledBoxSubtext}>
                   unique device identifier
