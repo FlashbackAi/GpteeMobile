@@ -99,12 +99,13 @@ export const NodeInfoPopup: React.FC<Props> = ({
       statusBarTranslucent
     >
       <StatusBar backgroundColor="rgba(0,0,0,0.9)" barStyle="light-content" />
-      <TouchableOpacity
-        style={styles.overlay}
-        activeOpacity={1}
-        onPress={onClose}
-      >
-        <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
+      <View style={styles.overlay}>
+        <TouchableOpacity
+          style={styles.backdrop}
+          activeOpacity={1}
+          onPress={onClose}
+        />
+        <View style={styles.modalContainer}>
           <View style={styles.terminal}>
             {/* Terminal Header */}
             <View style={styles.terminalHeader}>
@@ -193,29 +194,38 @@ export const NodeInfoPopup: React.FC<Props> = ({
               </View>
             </View>
           </View>
-        </TouchableOpacity>
-      </TouchableOpacity>
+        </View>
+      </View>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
   overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 40,
+  },
+  backdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+  },
+  modalContainer: {
+    width: '90%',
+    maxWidth: 500,
+    maxHeight: '80%',
   },
   terminal: {
-    width: '100%',
-    maxWidth: 900,
-    minWidth: 320,
-    maxHeight: '85%',
     backgroundColor: '#000000',
     borderRadius: 12,
-    overflow: 'hidden',
     borderWidth: 2,
     borderColor: colors.terminal.greenDim,
   },
@@ -241,13 +251,13 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   terminalBody: {
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 12,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
     backgroundColor: '#000000',
   },
   scrollView: {
-    maxHeight: 450,
+    maxHeight: 400,
   },
   tableHeader: {
     flexDirection: 'row',

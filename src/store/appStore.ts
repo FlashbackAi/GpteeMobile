@@ -659,17 +659,16 @@ export const useAppStore = create<AppState>((set, get) => ({
             ? Math.floor(providerModeStats.providerTimeMs / providerModeStats.requestsServed)
             : 0,
           pro_mode_session_uptime: proSessionUptime,
-          pro_mode_total_uptime: providerModeEnabled ? providerModeStats.totalUptime + proSessionUptime : providerModeStats.totalUptime,
+          pro_mode_total_uptime: providerModeStats.totalUptime, // Don't add session uptime - that's tracked separately
           // Worker mode stats
           work_mode_tasks_processed: workerModeStats.tasksProcessed,
           work_mode_tasks_failed: workerModeStats.tasksFailed,
           work_mode_total_detections: workerModeStats.totalDetections,
           work_mode_avg_processing_time: workerModeStats.avgProcessingTimeMs,
           work_mode_session_uptime: workSessionUptime,
-          work_mode_total_uptime: imageWorkerEnabled ? workerModeStats.totalUptime + workSessionUptime : workerModeStats.totalUptime,
-          // Node total uptime (only add session uptime if mode is enabled)
-          node_total_uptime: (providerModeEnabled ? providerModeStats.totalUptime + proSessionUptime : providerModeStats.totalUptime)
-            + (imageWorkerEnabled ? workerModeStats.totalUptime + workSessionUptime : workerModeStats.totalUptime),
+          work_mode_total_uptime: workerModeStats.totalUptime, // Don't add session uptime - that's tracked separately
+          // Node total uptime (sum of provider and worker total uptimes - backend will add session uptimes)
+          node_total_uptime: providerModeStats.totalUptime + workerModeStats.totalUptime,
           node_last_active_time: new Date().toISOString(),
         };
       });
@@ -738,14 +737,14 @@ export const useAppStore = create<AppState>((set, get) => ({
               ? Math.floor(providerModeStats.providerTimeMs / providerModeStats.requestsServed)
               : 0,
             pro_mode_session_uptime: proSessionUptime,
-            pro_mode_total_uptime: providerModeStats.totalUptime + proSessionUptime,
+            pro_mode_total_uptime: providerModeStats.totalUptime, // Don't add session uptime - that's tracked separately
             work_mode_tasks_processed: workerModeStats.tasksProcessed,
             work_mode_tasks_failed: workerModeStats.tasksFailed,
             work_mode_total_detections: workerModeStats.totalDetections,
             work_mode_avg_processing_time: workerModeStats.avgProcessingTimeMs,
             work_mode_session_uptime: workSessionUptime,
-            work_mode_total_uptime: workerModeStats.totalUptime + workSessionUptime,
-            node_total_uptime: (providerModeStats.totalUptime + proSessionUptime) + (workerModeStats.totalUptime + workSessionUptime),
+            work_mode_total_uptime: workerModeStats.totalUptime, // Don't add session uptime - that's tracked separately
+            node_total_uptime: providerModeStats.totalUptime + workerModeStats.totalUptime, // Backend will add session uptimes
             node_last_active_time: new Date().toISOString(),
           };
         });
@@ -788,17 +787,16 @@ export const useAppStore = create<AppState>((set, get) => ({
           ? Math.floor(providerModeStats.providerTimeMs / providerModeStats.requestsServed)
           : 0,
         pro_mode_session_uptime: proSessionUptime,
-        pro_mode_total_uptime: providerModeEnabled ? providerModeStats.totalUptime + proSessionUptime : providerModeStats.totalUptime,
+        pro_mode_total_uptime: providerModeStats.totalUptime, // Don't add session uptime - that's tracked separately
         // Worker mode stats
         work_mode_tasks_processed: workerModeStats.tasksProcessed,
         work_mode_tasks_failed: workerModeStats.tasksFailed,
         work_mode_total_detections: workerModeStats.totalDetections,
         work_mode_avg_processing_time: workerModeStats.avgProcessingTimeMs,
         work_mode_session_uptime: workSessionUptime,
-        work_mode_total_uptime: imageWorkerEnabled ? workerModeStats.totalUptime + workSessionUptime : workerModeStats.totalUptime,
-        // Node total uptime (only add session uptime if mode is enabled)
-        node_total_uptime: (providerModeEnabled ? providerModeStats.totalUptime + proSessionUptime : providerModeStats.totalUptime)
-          + (imageWorkerEnabled ? workerModeStats.totalUptime + workSessionUptime : workerModeStats.totalUptime),
+        work_mode_total_uptime: workerModeStats.totalUptime, // Don't add session uptime - that's tracked separately
+        // Node total uptime (sum of provider and worker total uptimes - backend will add session uptimes)
+        node_total_uptime: providerModeStats.totalUptime + workerModeStats.totalUptime,
         node_last_active_time: new Date().toISOString(),
       };
 
@@ -980,17 +978,16 @@ export const useAppStore = create<AppState>((set, get) => ({
             ? Math.floor(updatedStats.providerTimeMs / updatedStats.requestsServed)
             : 0,
           pro_mode_session_uptime: proSessionUptime,
-          pro_mode_total_uptime: providerModeEnabled ? updatedStats.totalUptime + proSessionUptime : updatedStats.totalUptime,
+          pro_mode_total_uptime: updatedStats.totalUptime, // Don't add session uptime - that's tracked separately
           // Worker mode stats (keep existing)
           work_mode_tasks_processed: workerModeStats.tasksProcessed,
           work_mode_tasks_failed: workerModeStats.tasksFailed,
           work_mode_total_detections: workerModeStats.totalDetections,
           work_mode_avg_processing_time: workerModeStats.avgProcessingTimeMs,
           work_mode_session_uptime: workSessionUptime,
-          work_mode_total_uptime: imageWorkerEnabled ? workerModeStats.totalUptime + workSessionUptime : workerModeStats.totalUptime,
-          // Node total (only add session uptime if mode is enabled)
-          node_total_uptime: (providerModeEnabled ? updatedStats.totalUptime + proSessionUptime : updatedStats.totalUptime)
-            + (imageWorkerEnabled ? workerModeStats.totalUptime + workSessionUptime : workerModeStats.totalUptime),
+          work_mode_total_uptime: workerModeStats.totalUptime, // Don't add session uptime - that's tracked separately
+          // Node total (sum of provider and worker total uptimes - backend will add session uptimes)
+          node_total_uptime: updatedStats.totalUptime + workerModeStats.totalUptime,
           node_last_active_time: new Date().toISOString(),
         });
       } catch (error) {
@@ -1045,17 +1042,16 @@ export const useAppStore = create<AppState>((set, get) => ({
             ? Math.floor(providerModeStats.providerTimeMs / providerModeStats.requestsServed)
             : 0,
           pro_mode_session_uptime: proSessionUptime,
-          pro_mode_total_uptime: providerModeEnabled ? providerModeStats.totalUptime + proSessionUptime : providerModeStats.totalUptime,
+          pro_mode_total_uptime: providerModeStats.totalUptime, // Don't add session uptime - that's tracked separately
           // Worker mode stats (updated)
           work_mode_tasks_processed: updatedStats.tasksProcessed,
           work_mode_tasks_failed: updatedStats.tasksFailed,
           work_mode_total_detections: updatedStats.totalDetections,
           work_mode_avg_processing_time: updatedStats.avgProcessingTimeMs,
           work_mode_session_uptime: workSessionUptime,
-          work_mode_total_uptime: imageWorkerEnabled ? updatedStats.totalUptime + workSessionUptime : updatedStats.totalUptime,
-          // Node total (only add session uptime if mode is enabled)
-          node_total_uptime: (providerModeEnabled ? providerModeStats.totalUptime + proSessionUptime : providerModeStats.totalUptime)
-            + (imageWorkerEnabled ? updatedStats.totalUptime + workSessionUptime : updatedStats.totalUptime),
+          work_mode_total_uptime: updatedStats.totalUptime, // Don't add session uptime - that's tracked separately
+          // Node total (sum of provider and worker total uptimes - backend will add session uptimes)
+          node_total_uptime: providerModeStats.totalUptime + updatedStats.totalUptime,
           node_last_active_time: new Date().toISOString(),
         });
       } catch (error) {
@@ -1207,17 +1203,16 @@ export const useAppStore = create<AppState>((set, get) => ({
                 ? Math.floor(updatedStats.providerTimeMs / updatedStats.requestsServed)
                 : 0,
               pro_mode_session_uptime: proSessionUptime,
-              pro_mode_total_uptime: providerModeEnabled ? updatedStats.totalUptime + proSessionUptime : updatedStats.totalUptime,
+              pro_mode_total_uptime: updatedStats.totalUptime, // Don't add session uptime - that's tracked separately
               // Worker mode stats
               work_mode_tasks_processed: workerModeStats.tasksProcessed,
               work_mode_tasks_failed: workerModeStats.tasksFailed,
               work_mode_total_detections: workerModeStats.totalDetections,
               work_mode_avg_processing_time: workerModeStats.avgProcessingTimeMs,
               work_mode_session_uptime: workSessionUptime,
-              work_mode_total_uptime: imageWorkerEnabled ? workerModeStats.totalUptime + workSessionUptime : workerModeStats.totalUptime,
-              // Node total (only add session uptime if mode is enabled)
-              node_total_uptime: (providerModeEnabled ? updatedStats.totalUptime + proSessionUptime : updatedStats.totalUptime)
-                + (imageWorkerEnabled ? workerModeStats.totalUptime + workSessionUptime : workerModeStats.totalUptime),
+              work_mode_total_uptime: workerModeStats.totalUptime, // Don't add session uptime - that's tracked separately
+              // Node total (sum of provider and worker total uptimes - backend will add session uptimes)
+              node_total_uptime: updatedStats.totalUptime + workerModeStats.totalUptime,
               node_last_active_time: new Date().toISOString(),
             };
 
@@ -1372,22 +1367,46 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Log management
   addLog: (msg) => {
+    // Use new LogService - automatically categorizes based on message content
+    const { logService } = require('../services/LogService');
+
+    // Detect category and level from message
+    let category: 'provider' | 'worker' | 'system' = 'system';
+    let level: 'info' | 'success' | 'warning' | 'error' = 'info';
+
+    // Detect category
+    if (msg.toLowerCase().includes('provider') || msg.toLowerCase().includes('llm') || msg.toLowerCase().includes('model')) {
+      category = 'provider';
+    } else if (msg.toLowerCase().includes('worker') || msg.toLowerCase().includes('vision') || msg.toLowerCase().includes('task')) {
+      category = 'worker';
+    }
+
+    // Detect level from emoji/keywords
+    if (msg.includes('✅') || msg.toLowerCase().includes('success')) {
+      level = 'success';
+    } else if (msg.includes('⚠️') || msg.toLowerCase().includes('warning') || msg.toLowerCase().includes('skipped')) {
+      level = 'warning';
+    } else if (msg.includes('❌') || msg.toLowerCase().includes('error') || msg.toLowerCase().includes('failed')) {
+      level = 'error';
+    } else if (msg.includes('⏳') || msg.toLowerCase().includes('loading')) {
+      level = 'info';
+    }
+
+    logService.addLog(msg, category, level);
+
+    // Update state for backward compatibility (keep logs array in sync)
     const timestamp = new Date().toLocaleTimeString();
     const logEntry = `[${timestamp}] ${msg}`;
 
     set((s) => {
-      const newLogs = [...s.logs, logEntry].slice(-100); // Keep last 100 logs
-
-      // Save to AsyncStorage
-      AsyncStorage.setItem('activity_logs', JSON.stringify(newLogs)).catch(e => {
-        console.error('[AppStore] Failed to save logs:', e);
-      });
-
+      const newLogs = [...s.logs, logEntry].slice(-100);
       return { logs: newLogs };
     });
   },
 
   loadLogs: async () => {
+    // New LogService handles its own persistence
+    // This is kept for backward compatibility with old logs format
     try {
       const logsJson = await AsyncStorage.getItem('activity_logs');
       if (logsJson) {
@@ -1400,6 +1419,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   clearLogs: async () => {
+    const { logService } = require('../services/LogService');
+    logService.clearLogs();
+
     try {
       await AsyncStorage.removeItem('activity_logs');
       set({ logs: [] });

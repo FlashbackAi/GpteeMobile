@@ -26,6 +26,7 @@ import { FaceRecognitionService } from './src/services/FaceRecognitionService';
 
 export default function App() {
   const [showProfile, setShowProfile] = useState(false);
+  const [highlightModel, setHighlightModel] = useState<'llm' | 'vision' | null>(null);
   const [showChatHistory, setShowChatHistory] = useState(false);
   const [showFaceTest, setShowFaceTest] = useState(false);
   const [showImageWorker, setShowImageWorker] = useState(false);
@@ -413,11 +414,15 @@ export default function App() {
   }
 
   if (showProfile) {
-    return <ProfileScreen onBack={() => {
-      setShowProfile(false);
-      // Trigger model load check when returning from profile
-      if (!started) setStarted(false);
-    }} />;
+    return <ProfileScreen
+      onBack={() => {
+        setShowProfile(false);
+        setHighlightModel(null); // Clear highlight when going back
+        // Trigger model load check when returning from profile
+        if (!started) setStarted(false);
+      }}
+      highlightModel={highlightModel}
+    />;
   }
 
   if (showChatHistory) {
@@ -441,7 +446,10 @@ export default function App() {
   if (!started) {
     return <HomeScreen
       onSelectRole={handleStart}
-      onOpenProfile={() => setShowProfile(true)}
+      onOpenProfile={(highlight?: 'llm' | 'vision') => {
+        setHighlightModel(highlight || null);
+        setShowProfile(true);
+      }}
       onOpenFaceTest={() => setShowFaceTest(true)}
       onOpenImageWorker={() => setShowImageWorker(true)}
     />;
@@ -451,7 +459,10 @@ export default function App() {
     <ChatScreen
       onBack={handleBack}
       onOpenMenu={() => setShowChatHistory(true)}
-      onOpenProfile={() => setShowProfile(true)}
+      onOpenProfile={(highlight?: 'llm' | 'vision') => {
+        setHighlightModel(highlight || null);
+        setShowProfile(true);
+      }}
     />
   );
 }

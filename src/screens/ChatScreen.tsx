@@ -16,13 +16,14 @@ import { colors, fonts } from '../theme/colors';
 import ProviderService from '../services/ProviderService';
 import { NodeInfoPopup } from '../components/NodeInfoPopup';
 import { LogsPopup } from '../components/LogsPopup';
+import { FloatingDownloadButton } from '../components/FloatingDownloadButton';
 import { Sidebar } from '../components/Sidebar';
 import { CustomToast } from '../components/CustomToast';
 
 interface Props {
   onBack: () => void;
   onOpenMenu: () => void;
-  onOpenProfile?: () => void;
+  onOpenProfile?: (highlightModel?: 'llm' | 'vision') => void;
 }
 
 export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props) {
@@ -34,6 +35,8 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
   const [showLogs, setShowLogs] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [showFloatingDownload, setShowFloatingDownload] = useState(false);
+  const [floatingDownloadMode, setFloatingDownloadMode] = useState<'provider' | 'worker'>('provider');
   const flatListRef = useRef<FlatList>(null);
   const slideAnim = useRef(new Animated.Value(0)).current;
   const [liveMetrics, setLiveMetrics] = useState<{
@@ -280,13 +283,9 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
     if (enabled) {
       // Check if model is downloaded
       if (!modelDownloaded) {
-        Toast.show({
-          type: 'error',
-          text1: 'llm model required',
-          text2: 'please download the model from profile settings',
-          position: 'top',
-          visibilityTime: 4000,
-        });
+        // Show floating download button instead of toast
+        setFloatingDownloadMode('provider');
+        setShowFloatingDownload(true);
         return;
       }
 
@@ -1079,6 +1078,17 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
         onNewChat={async () => {
           await startNewChat();
         }}
+      />
+
+      {/* Floating Download Button */}
+      <FloatingDownloadButton
+        visible={showFloatingDownload}
+        mode={floatingDownloadMode}
+        onDownload={() => {
+          setShowFloatingDownload(false);
+          onOpenProfile?.(floatingDownloadMode === 'provider' ? 'llm' : 'vision');
+        }}
+        onDismiss={() => setShowFloatingDownload(false)}
       />
 
       {/* Toast Notifications */}

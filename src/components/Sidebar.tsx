@@ -99,7 +99,10 @@ export const Sidebar: React.FC<Props> = ({
           {/* Branding */}
           <View style={styles.branding}>
             <View style={styles.brandingHeader}>
-              <Text style={styles.logo}>gptee.org</Text>
+              <View style={styles.brandingText}>
+                <Text style={styles.logo}>gptee.org</Text>
+                <Text style={styles.tagline}>gpt for everyone, free.</Text>
+              </View>
               <TouchableOpacity
                 style={styles.homeIconButton}
                 onPress={() => {
@@ -107,10 +110,9 @@ export const Sidebar: React.FC<Props> = ({
                   onClose();
                 }}
               >
-                <Icon name="home" size={20} color={colors.text.primary} />
+                <Icon name="home" size={22} color={colors.accent.primary} />
               </TouchableOpacity>
             </View>
-            <Text style={styles.tagline}>gpt for everyone, free.</Text>
           </View>
 
           {/* Chat History */}
@@ -311,6 +313,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    width: '100%',
+  },
+  brandingText: {
+    flex: 1,
+    marginRight: 8,
   },
   logo: {
     fontSize: 28,
@@ -318,18 +325,23 @@ const styles = StyleSheet.create({
     color: colors.accent.primary,
     letterSpacing: -0.5,
     fontFamily: fonts.bold,
+    marginBottom: 4,
   },
   homeIconButton: {
     padding: 8,
     borderRadius: 8,
-    backgroundColor: colors.terminal.background,
+    backgroundColor: 'rgba(39, 201, 63, 0.1)',
     borderWidth: 1,
-    borderColor: colors.terminal.greenDim,
+    borderColor: colors.terminal.green,
+    flexShrink: 0,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   tagline: {
     fontSize: 11,
     color: colors.text.tertiary,
-    marginTop: 4,
     letterSpacing: 0.5,
     fontFamily: fonts.regular,
   },

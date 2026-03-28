@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Alert,
   Platform,
   Switch,
+  Animated,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import DeviceInfo from 'react-native-device-info';
@@ -25,8 +26,14 @@ import { VisionWorkerService } from '../services/VisionWorkerService';
 import { FaceRecognitionService } from '../services/FaceRecognitionService';
 import { llamaEngine } from '../inference/LlamaEngine';
 import Toast from 'react-native-toast-message';
+import type { ThermalStatus } from '../services/ThermalMonitorService';
 
-export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+interface ProfileScreenProps {
+  onBack: () => void;
+  highlightModel?: 'llm' | 'vision' | null;
+}
+
+export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightModel }) => {
   const {
     modelDownloaded,
     modelLoaded,
@@ -58,6 +65,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     setVisionModelsLoaded,
     setModelLoaded,
     addLog,
+    connected,
   } = useAppStore();
 
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
@@ -65,18 +73,71 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [downloadedModels, setDownloadedModels] = useState<string[]>([]);
   const [modelSize, setModelSize] = useState<number>(0);
   const [batteryLevel, setBatteryLevel] = useState<number>(0);
+  const [thermalStatus, setThermalStatus] = useState<ThermalStatus>('nominal');
   const [downloadingVisionModels, setDownloadingVisionModels] = useState(false);
   const [visionModelsProgress, setVisionModelsProgress] = useState(0);
   const [visionModelsSize, setVisionModelsSize] = useState(0);
 
+  // Refs for scrolling and highlighting
+  const scrollViewRef = useRef<ScrollView>(null);
+  const llmButtonRef = useRef<View>(null);
+  const visionButtonRef = useRef<View>(null);
+  const highlightAnim = useRef(new Animated.Value(0)).current;
+
   const modelManager = ModelDownloadManager.getInstance();
   const visionDownloader = VisionModelDownloader.getInstance();
+
+  // Handle highlighting and scrolling when highlightModel is set
+  useEffect(() => {
+    if (highlightModel) {
+      // Wait for layout to complete
+      const timer = setTimeout(() => {
+        const targetRef = highlightModel === 'llm' ? llmButtonRef : visionButtonRef;
+
+        if (targetRef.current) {
+          // Measure and scroll to the button
+          targetRef.current.measureLayout(
+            scrollViewRef.current as any,
+            (x, y) => {
+              scrollViewRef.current?.scrollTo({ y: y - 100, animated: true });
+            },
+            () => {}
+          );
+
+          // Start pulsing animation
+          Animated.loop(
+            Animated.sequence([
+              Animated.timing(highlightAnim, {
+                toValue: 1,
+                duration: 800,
+                useNativeDriver: false,
+              }),
+              Animated.timing(highlightAnim, {
+                toValue: 0,
+                duration: 800,
+                useNativeDriver: false,
+              }),
+            ])
+          ).start();
+
+          // Stop animation after 4 seconds
+          setTimeout(() => {
+            highlightAnim.stopAnimation();
+            highlightAnim.setValue(0);
+          }, 4000);
+        }
+      }, 500);
+
+      return () => clearTimeout(timer);
+    }
+  }, [highlightModel]);
 
   useEffect(() => {
     loadSystemInfo();
     loadDownloadedModels();
     loadVisionModels();
     loadBatteryInfo();
+    loadThermalStatus();
     loadBatteryThreshold(); // Load saved threshold
     loadNodeStats(); // Load node statistics
 
@@ -91,9 +152,15 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       loadBatteryInfo();
     }, 10000);
 
+    // Refresh thermal status every 10 seconds
+    const thermalInterval = setInterval(() => {
+      loadThermalStatus();
+    }, 10000);
+
     return () => {
       clearInterval(memInterval);
       clearInterval(batteryInterval);
+      clearInterval(thermalInterval);
     };
   }, []);
 
@@ -131,6 +198,33 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       setBatteryLevel(Math.round(level * 100));
     } catch (error) {
       console.error('Error getting battery level:', error);
+    }
+  };
+
+  const loadThermalStatus = async () => {
+    try {
+      const { ThermalMonitorService } = require('../services/ThermalMonitorService');
+      const status = await ThermalMonitorService.getInstance().getCurrentStatus();
+      setThermalStatus(status);
+    } catch (error) {
+      console.warn('Error getting thermal status:', error);
+      setThermalStatus('nominal'); // Fallback to nominal on error
+    }
+  };
+
+  const getThermalColor = (status: ThermalStatus) => {
+    switch (status) {
+      case 'nominal':
+        return colors.status.success;
+      case 'light':
+        return colors.accent.primary;
+      case 'moderate':
+        return colors.status.warning;
+      case 'severe':
+      case 'critical':
+        return colors.status.error;
+      default:
+        return colors.text.tertiary;
     }
   };
 
@@ -498,7 +592,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <ScrollView ref={scrollViewRef} style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         {/* model management */}
         <Accordion title="model management" icon="download" defaultExpanded={true}>
           <View style={styles.accordionContent}>
@@ -569,11 +663,30 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             {/* Action Buttons */}
             <View style={styles.modelActions}>
               {!modelDownloaded && !modelDownloading && (
-                <TouchableOpacity
-                  style={styles.terminalButton}
-                  onPress={handleDownloadModel}>
-                  <Text style={styles.terminalButtonText}>[ download ]</Text>
-                </TouchableOpacity>
+                <Animated.View
+                  ref={llmButtonRef}
+                  style={{
+                    borderWidth: highlightModel === 'llm' ? highlightAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [2, 4]
+                    }) : 2,
+                    borderColor: highlightModel === 'llm' ? highlightAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['rgba(39, 201, 63, 0.6)', 'rgba(39, 201, 63, 1)']
+                    }) as any : colors.terminal.green,
+                    borderRadius: 6,
+                    shadowColor: highlightModel === 'llm' ? '#27c93f' : 'transparent',
+                    shadowOpacity: highlightModel === 'llm' ? highlightAnim : 0,
+                    shadowRadius: 12,
+                    elevation: highlightModel === 'llm' ? 8 : 0,
+                  }}
+                >
+                  <TouchableOpacity
+                    style={[styles.terminalButton, { borderWidth: 0 }]}
+                    onPress={handleDownloadModel}>
+                    <Text style={styles.terminalButtonText}>[ download ]</Text>
+                  </TouchableOpacity>
+                </Animated.View>
               )}
 
               {modelDownloaded && !modelDownloading && (
@@ -640,11 +753,30 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             {/* Action Buttons */}
             <View style={styles.modelActions}>
               {!visionModelsDownloaded && !downloadingVisionModels && (
-                <TouchableOpacity
-                  style={styles.terminalButton}
-                  onPress={handleDownloadVisionModels}>
-                  <Text style={styles.terminalButtonText}>[ download ]</Text>
-                </TouchableOpacity>
+                <Animated.View
+                  ref={visionButtonRef}
+                  style={{
+                    borderWidth: highlightModel === 'vision' ? highlightAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [2, 4]
+                    }) : 2,
+                    borderColor: highlightModel === 'vision' ? highlightAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['rgba(39, 201, 63, 0.6)', 'rgba(39, 201, 63, 1)']
+                    }) as any : colors.terminal.green,
+                    borderRadius: 6,
+                    shadowColor: highlightModel === 'vision' ? '#27c93f' : 'transparent',
+                    shadowOpacity: highlightModel === 'vision' ? highlightAnim : 0,
+                    shadowRadius: 12,
+                    elevation: highlightModel === 'vision' ? 8 : 0,
+                  }}
+                >
+                  <TouchableOpacity
+                    style={[styles.terminalButton, { borderWidth: 0 }]}
+                    onPress={handleDownloadVisionModels}>
+                    <Text style={styles.terminalButtonText}>[ download ]</Text>
+                  </TouchableOpacity>
+                </Animated.View>
               )}
 
               {visionModelsDownloaded && !downloadingVisionModels && (
@@ -674,7 +806,6 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     onValueChange={handleProviderModeToggle}
                     trackColor={{ false: colors.input.border, true: colors.terminal.green }}
                     thumbColor={colors.terminal.prompt}
-                    disabled={!modelDownloaded || batteryLevel < batteryThreshold}
                   />
                 </View>
               </View>
@@ -692,11 +823,104 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     onValueChange={handleWorkerModeToggle}
                     trackColor={{ false: colors.input.border, true: colors.terminal.green }}
                     thumbColor={colors.terminal.prompt}
-                    disabled={!visionModelsDownloaded || batteryLevel < batteryThreshold}
                   />
                 </View>
               </View>
             </View>
+
+            {/* Worker Statistics - always show */}
+            <View style={styles.sectionDivider}>
+              <Text style={styles.sectionDividerText}>worker statistics</Text>
+            </View>
+
+                <View style={styles.statsRow}>
+                  <View style={styles.statBoxContainer}>
+                    <View style={styles.statBoxLabel}>
+                      <Text style={styles.statBoxLabelText}>processed</Text>
+                    </View>
+                    <View style={styles.statBox}>
+                      <Text style={styles.statBoxValue}>{workerModeStats.tasksProcessed}</Text>
+                      <Text style={styles.statBoxUnit}>tasks</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.statBoxContainer}>
+                    <View style={styles.statBoxLabel}>
+                      <Text style={styles.statBoxLabelText}>detections</Text>
+                    </View>
+                    <View style={styles.statBox}>
+                      <Text style={styles.statBoxValue}>{workerModeStats.totalDetections}</Text>
+                      <Text style={styles.statBoxUnit}>found</Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.statsRow}>
+                  <View style={styles.statBoxContainer}>
+                    <View style={styles.statBoxLabel}>
+                      <Text style={styles.statBoxLabelText}>failed</Text>
+                    </View>
+                    <View style={styles.statBox}>
+                      <Text style={styles.statBoxValue}>{workerModeStats.tasksFailed}</Text>
+                      <Text style={styles.statBoxUnit}>tasks</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.statBoxContainer}>
+                    <View style={styles.statBoxLabel}>
+                      <Text style={styles.statBoxLabelText}>avg time</Text>
+                    </View>
+                    <View style={styles.statBox}>
+                      <Text style={styles.statBoxValue}>
+                        {workerModeStats.avgProcessingTimeMs > 0
+                          ? (workerModeStats.avgProcessingTimeMs / 1000).toFixed(1)
+                          : '0.0'}
+                      </Text>
+                      <Text style={styles.statBoxUnit}>seconds</Text>
+                    </View>
+                  </View>
+                </View>
+
+            {/* Device Health Section - always show */}
+            <View style={styles.sectionDivider}>
+              <Text style={styles.sectionDividerText}>device health</Text>
+            </View>
+
+                <View style={styles.styledBoxContainer}>
+                  <View style={styles.styledBoxLabel}>
+                    <Text style={styles.styledBoxLabelText}>thermal status</Text>
+                  </View>
+                  <View style={styles.styledBox}>
+                    <Text style={[
+                      styles.styledBoxValue,
+                      { color: getThermalColor(thermalStatus) }
+                    ]}>
+                      {thermalStatus}
+                    </Text>
+                    <Text style={styles.styledBoxSubtext}>
+                      {thermalStatus === 'nominal' || thermalStatus === 'light'
+                        ? 'device temperature normal'
+                        : 'device may throttle performance'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.styledBoxContainer}>
+                  <View style={styles.styledBoxLabel}>
+                    <Text style={styles.styledBoxLabelText}>network</Text>
+                  </View>
+                  <View style={styles.styledBox}>
+                    <Text style={[
+                      styles.styledBoxValue,
+                      { color: connected ? colors.status.success : colors.status.error }
+                    ]}>
+                      {connected ? 'connected' : 'disconnected'}
+                    </Text>
+                    <Text style={styles.styledBoxSubtext}>
+                      {connected ? 'relay server reachable' : 'cannot reach coordinator'}
+                    </Text>
+                  </View>
+                </View>
 
             <View style={styles.styledBoxContainer}>
               <View style={styles.styledBoxLabel}>
@@ -1514,5 +1738,56 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.status.error,
     letterSpacing: 1,
+  },
+  sectionDivider: {
+    marginTop: 20,
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.terminal.greenDim,
+  },
+  sectionDividerText: {
+    fontSize: 12,
+    color: colors.terminal.green,
+    fontFamily: fonts.bold,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 12,
+  },
+  statBoxContainer: {
+    flex: 1,
+  },
+  statBoxLabel: {
+    marginBottom: 6,
+  },
+  statBoxLabelText: {
+    fontSize: 10,
+    color: colors.text.tertiary,
+    fontFamily: fonts.regular,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  statBox: {
+    backgroundColor: colors.terminal.background,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: 'rgba(39, 201, 63, 0.4)',
+    padding: 12,
+    alignItems: 'center',
+  },
+  statBoxValue: {
+    fontSize: 24,
+    color: colors.terminal.green,
+    fontFamily: fonts.bold,
+    marginBottom: 4,
+  },
+  statBoxUnit: {
+    fontSize: 10,
+    color: colors.text.tertiary,
+    fontFamily: fonts.regular,
   },
 });

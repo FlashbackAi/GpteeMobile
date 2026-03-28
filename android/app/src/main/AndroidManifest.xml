@@ -47,5 +47,10 @@
         android:enabled="true"
         android:exported="false"
         android:foregroundServiceType="dataSync" />
+      <service
+        android:name="com.asterinet.react.bgactions.RNBackgroundActionsTask"
+        android:enabled="true"
+        android:exported="false"
+        android:foregroundServiceType="dataSync" />
     </application>
 </manifest>

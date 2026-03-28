@@ -16,6 +16,8 @@ import { useAppStore } from '../store/appStore';
 import { colors, fonts } from '../theme/colors';
 import { NodeInfoPopup } from '../components/NodeInfoPopup';
 import { LogsPopup } from '../components/LogsPopup';
+import { ModeInfoPopup } from '../components/ModeInfoPopup';
+import { FloatingDownloadButton } from '../components/FloatingDownloadButton';
 import { Sidebar } from '../components/Sidebar';
 import { relayClient } from '../network/RelayClient';
 import { VisionWorkerService } from '../services/VisionWorkerService';
@@ -23,10 +25,12 @@ import { VisionModelDownloader } from '../services/VisionModelDownloader';
 import { FaceRecognitionService } from '../services/FaceRecognitionService';
 import { llamaEngine } from '../inference/LlamaEngine';
 import { COORDINATOR_URL } from '../config';
+import { startForegroundService, stopForegroundService, isServiceRunning } from '../services/ForegroundService';
+import { promptBatteryOptimization } from '../services/BatteryOptimization';
 
 interface Props {
   onSelectRole: () => void;
-  onOpenProfile: () => void;
+  onOpenProfile: (highlightModel?: 'llm' | 'vision') => void;
   onOpenFaceTest?: () => void;
   onOpenImageWorker?: () => void;
 }
@@ -51,6 +55,9 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
   const setSelectedProvider = useAppStore((s) => s.setSelectedProvider);
   const addLog = useAppStore((s) => s.addLog);
 
+  // Provider stats
+  const providerModeStats = useAppStore((s) => s.providerModeStats);
+
   // Image Worker state
   const imageWorkerEnabled = useAppStore((s) => s.imageWorkerEnabled);
   const setImageWorkerEnabled = useAppStore((s) => s.setImageWorkerEnabled);
@@ -67,6 +74,10 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
   const [showNodeInfo, setShowNodeInfo] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
+  const [showModeInfo, setShowModeInfo] = useState(false);
+  const [selectedMode, setSelectedMode] = useState<'provider' | 'worker'>('provider');
+  const [showFloatingDownload, setShowFloatingDownload] = useState(false);
+  const [floatingDownloadMode, setFloatingDownloadMode] = useState<'provider' | 'worker'>('provider');
   const [greeting, setGreeting] = useState('');
   const [batteryLevel, setBatteryLevel] = useState(100);
 
@@ -110,13 +121,9 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
     if (value) {
       // Check if LLM model is downloaded
       if (!modelDownloaded) {
-        Toast.show({
-          type: 'error',
-          text1: 'llm model required',
-          text2: 'please download the model from profile settings',
-          position: 'top',
-          visibilityTime: 4000,
-        });
+        // Show floating download button instead of toast
+        setFloatingDownloadMode('provider');
+        setShowFloatingDownload(true);
         return;
       }
 
@@ -139,68 +146,99 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
         console.error('Error checking battery level:', error);
       }
 
-      // MUTUAL EXCLUSIVITY: Disable worker mode if enabled
-      if (imageWorkerEnabled) {
-        await setImageWorkerEnabled(false);
-        const workerService = VisionWorkerService.getInstance();
-        await workerService.stopWorkerMode();
-        try {
-          const faceService = FaceRecognitionService.getInstance();
-          await faceService.release();
-        } catch (error) {
-          console.warn('Error releasing vision models:', error);
-        }
-        setVisionModelsLoaded(false);
-        addLog('⚠️ Worker mode disabled - provider mode enabled');
-      }
+      // Prompt for battery optimization before enabling
+      promptBatteryOptimization(
+        async () => {
+          // MUTUAL EXCLUSIVITY: Disable worker mode if enabled
+          if (imageWorkerEnabled) {
+            await setImageWorkerEnabled(false);
+            const workerService = VisionWorkerService.getInstance();
+            await workerService.stopWorkerMode();
+            try {
+              const faceService = FaceRecognitionService.getInstance();
+              await faceService.release();
+            } catch (error) {
+              console.warn('Error releasing vision models:', error);
+            }
+            setVisionModelsLoaded(false);
+            addLog('⚠️ Worker mode disabled - provider mode enabled');
+          }
 
-      // Load LLM model if not already loaded
-      if (modelDownloaded && modelPath && !llamaEngine.isLoaded() && !llamaEngine.isLoading()) {
-        Toast.show({
-          type: 'info',
-          text1: 'loading LLM model...',
-          text2: 'this may take a moment',
-          position: 'top',
-        });
+          // Load LLM model if not already loaded
+          if (modelDownloaded && modelPath && !llamaEngine.isLoaded() && !llamaEngine.isLoading()) {
+            Toast.show({
+              type: 'info',
+              text1: 'loading LLM model...',
+              text2: 'this may take a moment',
+              position: 'top',
+            });
 
-        addLog('⏳ Loading LLM model for provider mode...');
-        setModelLoading(true);
-        try {
-          await llamaEngine.loadModel(modelPath);
-          setModelLoaded(true);
-          setModelLoading(false);
-          addLog('✅ LLM model loaded successfully');
-          Toast.show({
-            type: 'success',
-            text1: 'model loaded',
-            text2: 'provider mode is now active',
-            position: 'top',
-          });
-        } catch (error: any) {
-          setModelLoading(false);
-          addLog(`❌ LLM model load failed: ${error.message}`);
-          Toast.show({
-            type: 'error',
-            text1: 'model load failed',
-            text2: error.message,
-            position: 'top',
-          });
-          // Don't enable provider mode if model load failed
-          return;
+            addLog('⏳ Loading LLM model for provider mode...');
+            setModelLoading(true);
+            try {
+              await llamaEngine.loadModel(modelPath);
+              setModelLoaded(true);
+              setModelLoading(false);
+              addLog('✅ LLM model loaded successfully');
+              Toast.show({
+                type: 'success',
+                text1: 'model loaded',
+                text2: 'provider mode is now active',
+                position: 'top',
+              });
+            } catch (error: any) {
+              setModelLoading(false);
+              addLog(`❌ LLM model load failed: ${error.message}`);
+              Toast.show({
+                type: 'error',
+                text1: 'model load failed',
+                text2: error.message,
+                position: 'top',
+              });
+              // Don't enable provider mode if model load failed
+              return;
+            }
+          }
+
+          // Enable provider mode
+          await setProviderModeEnabled(true);
+
+          // Start foreground service
+          try {
+            await startForegroundService();
+            addLog('✅ Background service started');
+          } catch (error: any) {
+            console.error('Failed to start foreground service:', error);
+            addLog(`⚠️ Background service failed: ${error.message}`);
+          }
+        },
+        () => {
+          // User cancelled - don't enable
+          addLog('⚠️ Provider mode requires battery optimization to be disabled');
         }
-      }
+      );
     } else {
-      // Disabling provider mode - unload the model
+      // Disabling provider mode - unload the model and stop service
       if (llamaEngine.isLoaded()) {
         addLog('⏳ Unloading LLM model...');
         await llamaEngine.unload();
         setModelLoaded(false);
         addLog('✅ LLM model unloaded');
       }
-    }
 
-    // Battery is sufficient or turning off - proceed
-    await setProviderModeEnabled(value);
+      // Stop foreground service if no modes are active
+      if (!imageWorkerEnabled && isServiceRunning()) {
+        try {
+          await stopForegroundService();
+          addLog('✅ Background service stopped');
+        } catch (error: any) {
+          console.error('Failed to stop foreground service:', error);
+        }
+      }
+
+      // Disable provider mode
+      await setProviderModeEnabled(false);
+    }
   };
 
   // Handle worker mode toggle
@@ -208,17 +246,9 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
     if (value) {
       // Check if vision models are downloaded
       if (!visionModelsDownloaded) {
-        Toast.show({
-          type: 'info',
-          text1: 'vision models required',
-          text2: 'please download models from profile settings',
-          position: 'top',
-          visibilityTime: 3000,
-        });
-        // Navigate to ProfileScreen
-        if (onOpenProfile) {
-          onOpenProfile();
-        }
+        // Show floating download button instead of navigating
+        setFloatingDownloadMode('worker');
+        setShowFloatingDownload(true);
         return;
       }
 
@@ -241,49 +271,77 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
         console.error('Error checking battery level:', error);
       }
 
-      // MUTUAL EXCLUSIVITY: Disable provider mode if enabled
-      if (providerModeEnabled) {
-        // handleProviderToggle will handle model unloading
-        await handleProviderToggle(false);
-        addLog('⚠️ Provider mode disabled - worker mode enabled');
-      }
+      // Prompt for battery optimization before enabling
+      promptBatteryOptimization(
+        async () => {
+          // MUTUAL EXCLUSIVITY: Disable provider mode if enabled
+          if (providerModeEnabled) {
+            // handleProviderToggle will handle model unloading
+            await handleProviderToggle(false);
+            addLog('⚠️ Provider mode disabled - worker mode enabled');
+          }
 
-      // Load vision models if not already loaded
-      if (!visionModelsLoaded) {
-        Toast.show({
-          type: 'info',
-          text1: 'loading vision models...',
-          text2: 'this may take a moment',
-          position: 'top',
-        });
+          // Load vision models if not already loaded
+          if (!visionModelsLoaded) {
+            Toast.show({
+              type: 'info',
+              text1: 'loading vision models...',
+              text2: 'this may take a moment',
+              position: 'top',
+            });
 
-        try {
-          const faceService = FaceRecognitionService.getInstance();
-          await faceService.initialize();
-          setVisionModelsLoaded(true);
-          addLog('✅ Vision models loaded successfully');
-        } catch (error) {
-          Toast.show({
-            type: 'error',
-            text1: 'failed to load models',
-            text2: 'could not initialize vision models',
-            position: 'top',
-          });
-          addLog('❌ Failed to load vision models');
-          return;
+            try {
+              const faceService = FaceRecognitionService.getInstance();
+              await faceService.initialize();
+              setVisionModelsLoaded(true);
+              addLog('✅ Vision models loaded successfully');
+            } catch (error) {
+              Toast.show({
+                type: 'error',
+                text1: 'failed to load models',
+                text2: 'could not initialize vision models',
+                position: 'top',
+              });
+              addLog('❌ Failed to load vision models');
+              return;
+            }
+          }
+
+          await setImageWorkerEnabled(true);
+
+          // Start foreground service
+          try {
+            await startForegroundService();
+            addLog('✅ Background service started');
+          } catch (error: any) {
+            console.error('Failed to start foreground service:', error);
+            addLog(`⚠️ Background service failed: ${error.message}`);
+          }
+
+          // Navigate to ImageWorkerScreen to complete setup
+          if (onOpenImageWorker) {
+            onOpenImageWorker();
+          }
+        },
+        () => {
+          // User cancelled - don't enable
+          addLog('⚠️ Worker mode requires battery optimization to be disabled');
         }
-      }
-
-      await setImageWorkerEnabled(true);
-
-      // Navigate to ImageWorkerScreen to complete setup
-      if (onOpenImageWorker) {
-        onOpenImageWorker();
-      }
+      );
     } else {
       await setImageWorkerEnabled(false);
       const workerService = VisionWorkerService.getInstance();
       await workerService.stopWorkerMode();
+
+      // Stop foreground service if no modes are active
+      if (!providerModeEnabled && isServiceRunning()) {
+        try {
+          await stopForegroundService();
+          addLog('✅ Background service stopped');
+        } catch (error: any) {
+          console.error('Failed to stop foreground service:', error);
+        }
+      }
     }
   };
 
@@ -488,88 +546,137 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
           onClearLogs={clearLogs}
         />
 
+        {/* Mode Info Popup */}
+        <ModeInfoPopup
+          visible={showModeInfo}
+          onClose={() => setShowModeInfo(false)}
+          mode={selectedMode}
+        />
+
+        {/* Floating Download Button */}
+        <FloatingDownloadButton
+          visible={showFloatingDownload}
+          mode={floatingDownloadMode}
+          onDownload={() => {
+            setShowFloatingDownload(false);
+            onOpenProfile(floatingDownloadMode === 'provider' ? 'llm' : 'vision');
+          }}
+          onDismiss={() => setShowFloatingDownload(false)}
+        />
+
         {/* Main content */}
         <View style={styles.content}>
           <Text style={styles.greeting}>{greeting}</Text>
           <Text style={styles.welcome}>welcome to</Text>
           <Text style={styles.description}>
-            peer-to-peer ai inference network.{'\n\n'}
-            chat using your local model or connect to online providers.
+            peer-to-peer ai inference network
           </Text>
 
-          {/* Image Worker Mode */}
-          {onOpenImageWorker && (
-            <View style={styles.workerSection}>
-              <View style={styles.workerHeader}>
-                <TouchableOpacity
-                  style={styles.workerInfo}
-                  onPress={onOpenImageWorker}
-                  activeOpacity={0.85}
-                >
-                  <View style={styles.workerTitleRow}>
-                    <Icon name="cpu" size={18} color={colors.accent.primary} />
-                    <Text style={styles.workerTitle}>image worker</Text>
-                    <Icon name="chevron-right" size={16} color={colors.text.tertiary} />
-                  </View>
-                  <Text style={styles.workerDesc}>
-                    contribute device vision processing to the network
-                  </Text>
-                </TouchableOpacity>
-                <Switch
-                  value={imageWorkerEnabled}
-                  onValueChange={handleWorkerToggle}
-                  trackColor={{ false: colors.input.border, true: colors.accent.primary }}
-                  thumbColor={imageWorkerEnabled ? colors.button.secondaryText : colors.text.tertiary}
-                  disabled={!visionModelsDownloaded || batteryLevel < batteryThreshold}
-                />
-              </View>
-              <View style={styles.workerStats}>
-                <View style={styles.workerStat}>
-                  <Text style={styles.workerStatLabel}>status</Text>
-                  <Text style={[
-                    styles.workerStatValue,
-                    {
-                      color: imageWorkerStatus === 'online' ? colors.status.success :
-                             imageWorkerStatus === 'connecting' ? colors.accent.secondary :
-                             imageWorkerStatus === 'paused' ? colors.status.warning :
-                             colors.text.tertiary
-                    }
-                  ]}>
-                    {imageWorkerStatus}
-                  </Text>
-                </View>
-                <View style={styles.workerStat}>
-                  <Text style={styles.workerStatLabel}>processed</Text>
-                  <Text style={styles.workerStatValue}>{imageWorkerStats.tasksProcessed}</Text>
-                </View>
-              </View>
+          {/* Guidance message */}
+          {(!modelDownloaded || !visionModelsDownloaded) && (
+            <View style={styles.guidanceCard}>
+              <Icon name="info" size={16} color={colors.terminal.green} />
+              <Text style={styles.guidanceText}>
+                {!modelDownloaded && !visionModelsDownloaded
+                  ? 'download models from settings to enable modes'
+                  : !modelDownloaded
+                  ? 'download llm model to enable provider mode'
+                  : 'download vision models to enable worker mode'}
+              </Text>
             </View>
           )}
 
-          {/* Provider Mode Toggle */}
-          <View style={styles.providerSection}>
-            <View style={styles.providerHeader}>
-              <View style={styles.providerInfo}>
-                <Text style={styles.providerTitle}>provider mode</Text>
-                <Text style={styles.providerDesc}>
-                  share your device's ai model with the network
-                </Text>
+          {/* 2-Column Mode Cards */}
+          <View style={styles.modesGrid}>
+            {/* Provider Mode Card */}
+            <View style={styles.modeCard}>
+              <View style={styles.modeHeader}>
+                <Text style={styles.modeTitle}>provider</Text>
+                <View style={styles.modeHeaderRight}>
+                  <TouchableOpacity
+                    style={styles.infoButton}
+                    onPress={() => {
+                      setSelectedMode('provider');
+                      setShowModeInfo(true);
+                    }}
+                  >
+                    <Icon name="info" size={16} color={colors.text.tertiary} />
+                  </TouchableOpacity>
+                  <Switch
+                    value={providerModeEnabled}
+                    onValueChange={handleProviderToggle}
+                    trackColor={{ false: colors.input.border, true: colors.accent.primary }}
+                    thumbColor={providerModeEnabled ? colors.button.secondaryText : colors.text.tertiary}
+                    style={styles.modeSwitch}
+                  />
+                </View>
               </View>
-              <Switch
-                value={providerModeEnabled}
-                onValueChange={handleProviderToggle}
-                trackColor={{ false: colors.input.border, true: colors.accent.primary }}
-                thumbColor={providerModeEnabled ? colors.button.secondaryText : colors.text.tertiary}
-                disabled={!modelDownloaded}
-              />
+              <Text style={styles.modeDescription}>
+                serve llm requests
+              </Text>
+              <View style={styles.modeStats}>
+                <View style={styles.modeStat}>
+                  <Text style={styles.modeStatLabel}>served</Text>
+                  <Text style={styles.modeStatValue}>
+                    {providerModeStats?.requestsServed || 0}
+                  </Text>
+                </View>
+                <View style={styles.modeStat}>
+                  <Text style={styles.modeStatLabel}>status</Text>
+                  <View style={styles.modeStatusContainer}>
+                    <View style={[styles.modeStatusDot, providerModeEnabled && styles.modeStatusActive]} />
+                    <Text style={styles.modeStatusText}>
+                      {providerModeEnabled ? 'online' : 'offline'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
             </View>
-            {providerModeEnabled && (
-              <View style={styles.providerActiveInfo}>
-                <Text style={styles.providerActiveText}>
-                  ✓ provider mode active - your device is now visible to the network
-                </Text>
+
+            {/* Worker Mode Card */}
+            <View style={styles.modeCard}>
+              <View style={styles.modeHeader}>
+                <Text style={styles.modeTitle}>worker</Text>
+                <View style={styles.modeHeaderRight}>
+                  <TouchableOpacity
+                    style={styles.infoButton}
+                    onPress={() => {
+                      setSelectedMode('worker');
+                      setShowModeInfo(true);
+                    }}
+                  >
+                    <Icon name="info" size={16} color={colors.text.tertiary} />
+                  </TouchableOpacity>
+                  <Switch
+                    value={imageWorkerEnabled}
+                    onValueChange={handleWorkerToggle}
+                    trackColor={{ false: colors.input.border, true: colors.accent.primary }}
+                    thumbColor={imageWorkerEnabled ? colors.button.secondaryText : colors.text.tertiary}
+                    style={styles.modeSwitch}
+                  />
+                </View>
               </View>
-            )}
+              <Text style={styles.modeDescription}>
+                process vision tasks
+              </Text>
+              <View style={styles.modeStats}>
+                <View style={styles.modeStat}>
+                  <Text style={styles.modeStatLabel}>processed</Text>
+                  <Text style={styles.modeStatValue}>
+                    {imageWorkerStats.tasksProcessed}
+                  </Text>
+                </View>
+                <View style={styles.modeStat}>
+                  <Text style={styles.modeStatLabel}>status</Text>
+                  <View style={styles.modeStatusContainer}>
+                    <View style={[styles.modeStatusDot, imageWorkerEnabled && styles.modeStatusActive]} />
+                    <Text style={styles.modeStatusText}>
+                      {imageWorkerStatus === 'online' ? 'online' : imageWorkerStatus === 'connecting' ? 'connecting' : 'offline'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </View>
           </View>
         </View>
 
@@ -660,9 +767,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
-    backgroundColor: colors.terminal.background,
-    borderWidth: 1,
-    borderColor: colors.terminal.greenDim,
+    backgroundColor: 'rgba(39, 201, 63, 0.05)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(39, 201, 63, 0.4)',
   },
   nodeChipText: {
     fontSize: 12,
@@ -681,9 +788,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
-    backgroundColor: colors.terminal.background,
-    borderWidth: 1,
-    borderColor: colors.terminal.greenDim,
+    backgroundColor: 'rgba(39, 201, 63, 0.05)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(39, 201, 63, 0.4)',
   },
   logsChipText: {
     fontSize: 12,
@@ -693,9 +800,9 @@ const styles = StyleSheet.create({
   profileButton: {
     padding: 8,
     borderRadius: 8,
-    backgroundColor: colors.terminal.background,
-    borderWidth: 1,
-    borderColor: colors.terminal.greenDim,
+    backgroundColor: 'rgba(39, 201, 63, 0.05)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(39, 201, 63, 0.4)',
   },
   profileIcon: {
     fontSize: 20,
@@ -757,11 +864,116 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   description: {
-    fontSize: 16,
-    lineHeight: 26,
+    fontSize: 14,
+    lineHeight: 22,
     color: colors.text.secondary,
     textAlign: 'center',
     fontFamily: fonts.regular,
+    marginBottom: 20,
+  },
+  guidanceCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(39, 201, 63, 0.1)',
+    borderRadius: 10,
+    padding: 14,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(39, 201, 63, 0.3)',
+  },
+  guidanceText: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.text.secondary,
+    fontFamily: fonts.regular,
+    lineHeight: 18,
+  },
+  modesGrid: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+  },
+  modeCard: {
+    flex: 1,
+    backgroundColor: colors.terminal.background,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1.5,
+    borderColor: 'rgba(39, 201, 63, 0.4)',
+    minHeight: 180,
+  },
+  modeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    minHeight: 32,
+  },
+  modeHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flexShrink: 0,
+    minWidth: 60,
+  },
+  infoButton: {
+    padding: 4,
+  },
+  modeSwitch: {
+    transform: [{ scale: 0.8 }],
+  },
+  modeTitle: {
+    fontSize: 16,
+    color: colors.text.primary,
+    fontFamily: fonts.bold,
+  },
+  modeDescription: {
+    fontSize: 12,
+    color: colors.text.tertiary,
+    fontFamily: fonts.regular,
+    marginBottom: 16,
+    lineHeight: 16,
+  },
+  modeStats: {
+    flexDirection: 'column',
+    gap: 10,
+    marginTop: 'auto',
+  },
+  modeStat: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  modeStatLabel: {
+    fontSize: 11,
+    color: colors.text.tertiary,
+    fontFamily: fonts.regular,
+  },
+  modeStatValue: {
+    fontSize: 16,
+    color: colors.accent.primary,
+    fontFamily: fonts.bold,
+  },
+  modeStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  modeStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.text.disabled,
+  },
+  modeStatusActive: {
+    backgroundColor: colors.status.success,
+  },
+  modeStatusText: {
+    fontSize: 11,
+    color: colors.text.tertiary,
+    fontFamily: fonts.regular,
+    textTransform: 'lowercase',
   },
   bottomContainer: {
     paddingBottom: 40,
