@@ -51,20 +51,23 @@ export const NodeInfoPopup: React.FC<Props> = ({
     // Initialize ping status for all providers
     const initialPings = new Map<string, ProviderPingStatus>();
     providers.forEach(provider => {
+      const isOwnNode = provider.peerId === currentPeerId;
       initialPings.set(provider.peerId, {
         peerId: provider.peerId,
-        ping: null,
-        status: 'checking',
+        ping: isOwnNode ? 0 : null, // Own node gets 0ms immediately
+        status: isOwnNode ? 'online' : 'checking', // Own node is always online
       });
     });
     setProviderPings(initialPings);
 
     // TODO: Implement real WebRTC ping measurement
-    // For now, simulate pings with staggered timing
+    // For now, simulate pings with staggered timing for remote nodes only
     providers.forEach((provider, index) => {
+      const isOwnNode = provider.peerId === currentPeerId;
+      if (isOwnNode) return; // Skip own node - already set to online
+
       setTimeout(() => {
-        const isOwnNode = provider.peerId === currentPeerId;
-        const simulatedPing = isOwnNode ? 0 : Math.floor(Math.random() * 150) + 30;
+        const simulatedPing = Math.floor(Math.random() * 150) + 30;
 
         setProviderPings(prev => {
           const updated = new Map(prev);

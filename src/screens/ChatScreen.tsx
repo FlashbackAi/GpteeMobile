@@ -278,6 +278,18 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
 
   const toggleProviderMode = async (enabled: boolean) => {
     if (enabled) {
+      // Check if model is downloaded
+      if (!modelDownloaded) {
+        Toast.show({
+          type: 'error',
+          text1: 'llm model required',
+          text2: 'please download the model from profile settings',
+          position: 'top',
+          visibilityTime: 4000,
+        });
+        return;
+      }
+
       // Check battery level before enabling
       try {
         const level = await DeviceInfo.getBatteryLevel();
@@ -295,6 +307,50 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
         }
       } catch (error) {
         console.error('Error checking battery level:', error);
+      }
+
+      // Load LLM model if not already loaded
+      if (modelDownloaded && modelPath && !llamaEngine.isLoaded() && !llamaEngine.isLoading()) {
+        Toast.show({
+          type: 'info',
+          text1: 'loading LLM model...',
+          text2: 'this may take a moment',
+          position: 'top',
+        });
+
+        addLog('⏳ Loading LLM model for provider mode...');
+        setModelLoading(true);
+        try {
+          await llamaEngine.loadModel(modelPath);
+          setModelLoaded(true);
+          setModelLoading(false);
+          addLog('✅ LLM model loaded successfully');
+          Toast.show({
+            type: 'success',
+            text1: 'model loaded',
+            text2: 'provider mode is now active',
+            position: 'top',
+          });
+        } catch (error: any) {
+          setModelLoading(false);
+          addLog(`❌ LLM model load failed: ${error.message}`);
+          Toast.show({
+            type: 'error',
+            text1: 'model load failed',
+            text2: error.message,
+            position: 'top',
+          });
+          // Don't enable provider mode if model load failed
+          return;
+        }
+      }
+    } else {
+      // Disabling provider mode - unload the model
+      if (llamaEngine.isLoaded()) {
+        addLog('⏳ Unloading LLM model...');
+        await llamaEngine.unload();
+        setModelLoaded(false);
+        addLog('✅ LLM model unloaded');
       }
     }
 
@@ -337,17 +393,9 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
   }, [providerModeEnabled, modelLoaded]);
 
   const toggleAccepting = async (val: boolean) => {
+    // Use toggleProviderMode to handle model loading/unloading
+    await toggleProviderMode(val);
     setAccepting(val);
-    // Update provider mode in store - this triggers App.tsx to update relay registration
-    await setProviderModeEnabled(val);
-
-    if (val) {
-      ProviderService.start();
-      addLog('🟢 Now accepting jobs (available as provider)');
-    } else {
-      ProviderService.stop();
-      addLog('🔴 Stopped accepting jobs (no longer available)');
-    }
   };
 
   // ── Stop generation ────────────────────────────────────────────────────────

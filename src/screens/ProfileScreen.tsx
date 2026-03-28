@@ -33,11 +33,13 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     modelDownloading,
     modelDownloadProgress,
     modelFilename,
+    modelPath,
     setModelDownloaded,
     setModelDownloading,
     setModelDownloadProgress,
     setModelFilename,
     setModelPath,
+    setModelLoading,
     batteryThreshold,
     setBatteryThreshold,
     loadBatteryThreshold,
@@ -47,13 +49,15 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     setImageWorkerEnabled,
     userProfile,
     peerId,
-    nodeStats,
+    providerModeStats,
+    workerModeStats,
     loadNodeStats,
     visionModelsDownloaded,
     visionModelsLoaded,
     setVisionModelsDownloaded,
     setVisionModelsLoaded,
     setModelLoaded,
+    addLog,
   } = useAppStore();
 
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
@@ -194,8 +198,52 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           position: 'top',
         });
       }
+
+      // Load LLM model if not already loaded
+      if (modelDownloaded && modelPath && !llamaEngine.isLoaded() && !llamaEngine.isLoading()) {
+        Toast.show({
+          type: 'info',
+          text1: 'loading LLM model...',
+          text2: 'this may take a moment',
+          position: 'top',
+        });
+
+        addLog('⏳ Loading LLM model for provider mode...');
+        setModelLoading(true);
+        try {
+          await llamaEngine.loadModel(modelPath);
+          setModelLoaded(true);
+          setModelLoading(false);
+          addLog('✅ LLM model loaded successfully');
+          Toast.show({
+            type: 'success',
+            text1: 'model loaded',
+            text2: 'provider mode is now active',
+            position: 'top',
+          });
+        } catch (error: any) {
+          setModelLoading(false);
+          addLog(`❌ LLM model load failed: ${error.message}`);
+          Toast.show({
+            type: 'error',
+            text1: 'model load failed',
+            text2: error.message,
+            position: 'top',
+          });
+          // Don't enable provider mode if model load failed
+          return;
+        }
+      }
+    } else {
+      // Disabling provider mode - unload the model
+      if (llamaEngine.isLoaded()) {
+        addLog('⏳ Unloading LLM model...');
+        await llamaEngine.unload();
+        setModelLoaded(false);
+        addLog('✅ LLM model unloaded');
+      }
     }
-    setProviderModeEnabled(value);
+    await setProviderModeEnabled(value);
   };
 
   const handleWorkerModeToggle = async (value: boolean) => {
@@ -224,9 +272,8 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
       // MUTUAL EXCLUSIVITY: Disable provider mode if enabled
       if (providerModeEnabled) {
-        await setProviderModeEnabled(false);
-        await llamaEngine.unload();
-        setModelLoaded(false);
+        // setProviderModeEnabled will handle model unloading
+        await handleProviderModeToggle(false);
         Toast.show({
           type: 'info',
           text1: 'provider mode disabled',
@@ -729,7 +776,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   <Text style={styles.statBoxLabelText}>served</Text>
                 </View>
                 <View style={styles.statBox}>
-                  <Text style={styles.statBoxValue}>{formatNumber(nodeStats.totalRequestsServed)}</Text>
+                  <Text style={styles.statBoxValue}>{formatNumber(providerModeStats.requestsServed)}</Text>
                   <Text style={styles.statBoxUnit}>requests</Text>
                 </View>
               </View>
@@ -739,7 +786,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   <Text style={styles.statBoxLabelText}>tokens</Text>
                 </View>
                 <View style={styles.statBox}>
-                  <Text style={styles.statBoxValue}>{formatNumber(nodeStats.totalTokensGenerated)}</Text>
+                  <Text style={styles.statBoxValue}>{formatNumber(providerModeStats.tokensGenerated)}</Text>
                   <Text style={styles.statBoxUnit}>generated</Text>
                 </View>
               </View>
@@ -752,7 +799,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   <Text style={styles.statBoxLabelText}>self</Text>
                 </View>
                 <View style={styles.statBox}>
-                  <Text style={styles.statBoxValue}>{formatNumber(nodeStats.totalSelfRequests)}</Text>
+                  <Text style={styles.statBoxValue}>{formatNumber(providerModeStats.selfRequests)}</Text>
                   <Text style={styles.statBoxUnit}>local</Text>
                 </View>
               </View>
@@ -762,7 +809,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   <Text style={styles.statBoxLabelText}>uptime</Text>
                 </View>
                 <View style={styles.statBox}>
-                  <Text style={styles.statBoxValue}>{formatUptime(nodeStats.sessionStartTime)}</Text>
+                  <Text style={styles.statBoxValue}>{formatUptime(providerModeStats.sessionStartTime)}</Text>
                   <Text style={styles.statBoxUnit}>session</Text>
                 </View>
               </View>
@@ -776,7 +823,7 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 </View>
                 <View style={styles.statBox}>
                   <Text style={styles.statBoxValue}>
-                    {(nodeStats.peakTokensPerSecond || 0) > 0 ? (nodeStats.peakTokensPerSecond || 0).toFixed(1) : '0.0'}
+                    {(providerModeStats.peakTokensPerSecond || 0) > 0 ? (providerModeStats.peakTokensPerSecond || 0).toFixed(1) : '0.0'}
                   </Text>
                   <Text style={styles.statBoxUnit}>tok/sec</Text>
                 </View>
@@ -789,8 +836,8 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <View style={styles.statBox}>
                   <Text style={styles.statBoxValue}>
                     {(() => {
-                      const totalTokens = (nodeStats.totalTokensGenerated || 0) + (nodeStats.totalSelfTokensReceived || 0);
-                      const totalTimeMs = (nodeStats.totalProviderTimeMs || 0) + (nodeStats.totalSelfTimeMs || 0);
+                      const totalTokens = (providerModeStats.tokensGenerated || 0) + (providerModeStats.selfTokensReceived || 0);
+                      const totalTimeMs = (providerModeStats.providerTimeMs || 0) + (providerModeStats.selfTimeMs || 0);
                       const avgTps = totalTimeMs > 0 ? (totalTokens / (totalTimeMs / 1000)).toFixed(1) : '0.0';
                       return avgTps;
                     })()}
@@ -808,8 +855,8 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 </View>
                 <View style={styles.statBox}>
                   <Text style={styles.statBoxValue}>
-                    {(nodeStats.lowestTokensPerSecond || 0) < Infinity && (nodeStats.lowestTokensPerSecond || 0) > 0
-                      ? (nodeStats.lowestTokensPerSecond || 0).toFixed(1)
+                    {(providerModeStats.lowestTokensPerSecond || 0) < Infinity && (providerModeStats.lowestTokensPerSecond || 0) > 0
+                      ? (providerModeStats.lowestTokensPerSecond || 0).toFixed(1)
                       : '0.0'}
                   </Text>
                   <Text style={styles.statBoxUnit}>tok/sec</Text>
@@ -823,8 +870,8 @@ export const ProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <View style={styles.statBox}>
                   <Text style={styles.statBoxValue}>
                     {(() => {
-                      const totalRequests = (nodeStats.totalRequestsServed || 0) + (nodeStats.totalSelfRequests || 0);
-                      const totalTimeMs = (nodeStats.totalProviderTimeMs || 0) + (nodeStats.totalSelfTimeMs || 0);
+                      const totalRequests = (providerModeStats.requestsServed || 0) + (providerModeStats.selfRequests || 0);
+                      const totalTimeMs = (providerModeStats.providerTimeMs || 0) + (providerModeStats.selfTimeMs || 0);
                       const avgResponseTime = totalRequests > 0 ? ((totalTimeMs / totalRequests) / 1000).toFixed(1) : '0.0';
                       return avgResponseTime;
                     })()}s

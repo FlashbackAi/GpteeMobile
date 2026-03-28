@@ -19,28 +19,41 @@ export interface ChatHistory {
   starred?: boolean;
 }
 
-export interface NodeStatistics {
-  // Provider stats (helping others)
-  totalRequestsServed: number;
-  totalTokensGenerated: number;
-  totalProviderTimeMs: number;
-
-  // Self stats (own usage)
-  totalSelfRequests: number;
-  totalSelfTokensReceived: number;
-  totalSelfTimeMs: number;
-
-  // Performance metrics (tokens per second)
+// Provider Mode Stats (LLM serving) - Local tracking
+export interface ProviderModeStats {
+  requestsServed: number;
+  tokensGenerated: number;
+  selfRequests: number;
+  selfTokensReceived: number;
+  providerTimeMs: number;
+  selfTimeMs: number;
   peakTokensPerSecond: number;
   lowestTokensPerSecond: number;
 
-  // Session stats
+  // Uptime tracking
+  sessionStartTime: number;        // Local timestamp when session started
+  sessionUptime: number;            // Calculated: Date.now() - sessionStartTime (seconds)
+  totalUptime: number;              // From backend (lifetime accumulated seconds)
+  lastActivityTime: number;
+}
+
+// Worker Mode Stats (Image analysis) - Local tracking
+export interface WorkerModeStats {
+  tasksProcessed: number;
+  tasksFailed: number;
+  totalDetections: number;
+  avgProcessingTimeMs: number;
+
+  // Uptime tracking
   sessionStartTime: number;
+  sessionUptime: number;
+  totalUptime: number;
   lastActivityTime: number;
 }
 
 export type WorkerStatus = 'offline' | 'connecting' | 'online' | 'paused';
 
+// Legacy WorkerStatistics for ImageWorkerScreen (keeping for backward compat)
 export interface WorkerStatistics {
   tasksProcessed: number;
   tasksFailed: number;
@@ -99,8 +112,11 @@ interface AppState {
   chatHistory: ChatHistory[];
   currentChatId: string | null;
 
-  // Node statistics
-  nodeStats: NodeStatistics;
+  // Provider Mode Stats (local tracking)
+  providerModeStats: ProviderModeStats;
+
+  // Worker Mode Stats (local tracking)
+  workerModeStats: WorkerModeStats;
 
   // Logs
   logs: string[];
@@ -157,6 +173,7 @@ interface AppState {
   setModelError: (e: string | null) => void;
   incrementJobsServed: () => void;
   updateProviderStats: (tokensGenerated: number, durationMs: number) => Promise<void>;
+  updateWorkerModeStats: (detections: number, processingTimeMs: number, success: boolean) => Promise<void>;
   setModelDownloaded: (v: boolean) => void;
   setModelDownloading: (v: boolean) => void;
   setModelDownloadProgress: (v: number) => void;
@@ -232,16 +249,28 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentChatId: null,
   logs: [],
   localInferenceMode: false,
-  nodeStats: {
-    totalRequestsServed: 0,
-    totalTokensGenerated: 0,
-    totalProviderTimeMs: 0,
-    totalSelfRequests: 0,
-    totalSelfTokensReceived: 0,
-    totalSelfTimeMs: 0,
+  providerModeStats: {
+    requestsServed: 0,
+    tokensGenerated: 0,
+    selfRequests: 0,
+    selfTokensReceived: 0,
+    providerTimeMs: 0,
+    selfTimeMs: 0,
     peakTokensPerSecond: 0,
     lowestTokensPerSecond: Infinity,
     sessionStartTime: Date.now(),
+    sessionUptime: 0,
+    totalUptime: 0,
+    lastActivityTime: Date.now(),
+  },
+  workerModeStats: {
+    tasksProcessed: 0,
+    tasksFailed: 0,
+    totalDetections: 0,
+    avgProcessingTimeMs: 0,
+    sessionStartTime: Date.now(),
+    sessionUptime: 0,
+    totalUptime: 0,
     lastActivityTime: Date.now(),
   },
   imageWorkerEnabled: false,
@@ -436,6 +465,42 @@ export const useAppStore = create<AppState>((set, get) => ({
       const settings = await fetchNodeSettings(nodeId);
       set({ nodeSettings: settings });
       console.log('[AppStore] Node settings loaded:', settings);
+
+      // Validate and fix settings if prerequisites are not met
+      const { modelDownloaded, visionModelsDownloaded } = get();
+      console.log('[AppStore] 🔍 Validation check - modelDownloaded:', modelDownloaded, 'visionModelsDownloaded:', visionModelsDownloaded);
+      console.log('[AppStore] 🔍 Backend settings - provider_mode_enabled:', settings.provider_mode_enabled, 'worker_mode_enabled:', settings.worker_mode_enabled);
+
+      let needsUpdate = false;
+      const updates: any = {};
+
+      // Provider mode requires LLM model to be downloaded
+      if (settings.provider_mode_enabled && !modelDownloaded) {
+        console.warn('[AppStore] ⚠️ Provider mode enabled but LLM model not downloaded - disabling provider mode');
+        updates.provider_mode_enabled = false;
+        needsUpdate = true;
+      }
+
+      // Worker mode requires vision models to be downloaded
+      if (settings.worker_mode_enabled && !visionModelsDownloaded) {
+        console.warn('[AppStore] ⚠️ Worker mode enabled but vision models not downloaded - disabling worker mode');
+        updates.worker_mode_enabled = false;
+        needsUpdate = true;
+      }
+
+      // Update backend if needed
+      if (needsUpdate) {
+        console.log('[AppStore] 🔧 Correcting invalid mode settings:', updates);
+        try {
+          await get().updateNodeSettings(updates);
+          console.log('[AppStore] ✅ Invalid mode settings corrected successfully');
+        } catch (error) {
+          console.error('[AppStore] ❌ Failed to correct invalid mode settings:', error);
+          throw error;
+        }
+      } else {
+        console.log('[AppStore] ✅ Mode settings validation passed - no correction needed');
+      }
     } catch (error) {
       console.error('[AppStore] Failed to load node settings:', error);
       // Try to load cached settings
@@ -444,6 +509,32 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (cached) {
         set({ nodeSettings: cached });
         console.log('[AppStore] Using cached node settings');
+
+        // Also validate cached settings
+        const { modelDownloaded, visionModelsDownloaded } = get();
+        let needsUpdate = false;
+        const updates: any = {};
+
+        if (cached.provider_mode_enabled && !modelDownloaded) {
+          console.warn('[AppStore] ⚠️ Cached provider mode enabled but LLM model not downloaded - disabling');
+          updates.provider_mode_enabled = false;
+          needsUpdate = true;
+        }
+
+        if (cached.worker_mode_enabled && !visionModelsDownloaded) {
+          console.warn('[AppStore] ⚠️ Cached worker mode enabled but vision models not downloaded - disabling');
+          updates.worker_mode_enabled = false;
+          needsUpdate = true;
+        }
+
+        if (needsUpdate) {
+          console.log('[AppStore] 🔧 Correcting invalid cached mode settings:', updates);
+          try {
+            await get().updateNodeSettings(updates);
+          } catch (updateError) {
+            console.error('[AppStore] Failed to update invalid settings:', updateError);
+          }
+        }
       }
     }
   },
@@ -455,15 +546,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         throw new Error('No nodeId available');
       }
 
+      console.log('[AppStore] 📤 updateNodeSettings called with:', partialSettings);
+
       const { updateNodeSettings } = await import('../services/NodeSettingsService');
       const payload = {
         node_id: nodeId,
         ...partialSettings,
       };
 
+      console.log('[AppStore] 📤 Sending to backend:', payload);
       const updatedSettings = await updateNodeSettings(payload);
       set({ nodeSettings: updatedSettings });
-      console.log('[AppStore] Node settings updated:', updatedSettings);
+      console.log('[AppStore] ✅ Node settings updated in backend:', updatedSettings);
 
       // Update local state if settings affect app behavior
       if (partialSettings.worker_mode_enabled !== undefined) {
@@ -497,25 +591,41 @@ export const useAppStore = create<AppState>((set, get) => ({
       const { fetchNodeStats } = await import('../services/NodeStatsService');
       const backendStats = await fetchNodeStats(nodeId);
 
-      // ✅ CRITICAL: Initialize local nodeStats FROM backend values
-      // This prevents data loss when switching devices or reinstalling app
-      const currentNodeStats = get().nodeStats;
-      const currentSessionStart = currentNodeStats.sessionStartTime;
+      // Calculate session start times from backend uptimes
+      const proModeSessionStart = backendStats.pro_mode_session_uptime
+        ? Date.now() - (backendStats.pro_mode_session_uptime * 1000)
+        : Date.now();
+
+      const workModeSessionStart = backendStats.work_mode_session_uptime
+        ? Date.now() - (backendStats.work_mode_session_uptime * 1000)
+        : Date.now();
 
       set({
         backendNodeStats: backendStats,
-        // Initialize local stats with backend values + current session
-        nodeStats: {
-          // Use backend totals as baseline (prevents data loss on device switch)
-          totalRequestsServed: backendStats.served_requests || 0,
-          totalTokensGenerated: backendStats.tokens_generated || 0,
-          totalProviderTimeMs: 0, // Can't restore time, reset for this session
-          totalSelfRequests: backendStats.self_requests || 0,
-          totalSelfTokensReceived: 0, // Not tracked in backend yet
-          totalSelfTimeMs: 0, // Not tracked in backend yet
-          peakTokensPerSecond: backendStats.peak_t_s || 0,
-          lowestTokensPerSecond: backendStats.low_t_s === 0 ? Infinity : backendStats.low_t_s,
-          sessionStartTime: currentSessionStart, // Keep current session start
+        // Initialize provider stats from backend
+        providerModeStats: {
+          requestsServed: backendStats.pro_mode_requests_served || 0,
+          tokensGenerated: backendStats.pro_mode_tokens_generated || 0,
+          selfRequests: backendStats.pro_mode_self_requests || 0,
+          selfTokensReceived: 0, // Not tracked in backend
+          providerTimeMs: 0, // Can't restore time accurately
+          selfTimeMs: 0,
+          peakTokensPerSecond: backendStats.pro_mode_peak_t_s || 0,
+          lowestTokensPerSecond: backendStats.pro_mode_low_t_s === 0 ? Infinity : backendStats.pro_mode_low_t_s,
+          sessionStartTime: proModeSessionStart,
+          sessionUptime: backendStats.pro_mode_session_uptime || 0,
+          totalUptime: backendStats.pro_mode_total_uptime || 0,
+          lastActivityTime: Date.now(),
+        },
+        // Initialize worker stats from backend
+        workerModeStats: {
+          tasksProcessed: backendStats.work_mode_tasks_processed || 0,
+          tasksFailed: backendStats.work_mode_tasks_failed || 0,
+          totalDetections: backendStats.work_mode_total_detections || 0,
+          avgProcessingTimeMs: backendStats.work_mode_avg_processing_time || 0,
+          sessionStartTime: workModeSessionStart,
+          sessionUptime: backendStats.work_mode_session_uptime || 0,
+          totalUptime: backendStats.work_mode_total_uptime || 0,
           lastActivityTime: Date.now(),
         }
       });
@@ -525,21 +635,42 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Start periodic sync (every 5 minutes)
       const { startPeriodicSync } = await import('../services/NodeStatsService');
       startPeriodicSync(() => {
-        const { nodeStats: currentStats, nodeId: currentNodeId } = get();
+        const { providerModeStats, workerModeStats, nodeId: currentNodeId, providerModeEnabled, imageWorkerEnabled } = get();
         if (!currentNodeId) return null as any;
+
+        // Only calculate session uptime for modes that are actually enabled
+        const proSessionUptime = providerModeEnabled
+          ? Math.floor((Date.now() - providerModeStats.sessionStartTime) / 1000)
+          : 0;
+        const workSessionUptime = imageWorkerEnabled
+          ? Math.floor((Date.now() - workerModeStats.sessionStartTime) / 1000)
+          : 0;
 
         return {
           node_id: currentNodeId,
-          served_requests: currentStats.totalRequestsServed,
-          tokens_generated: currentStats.totalTokensGenerated,
-          self_requests: currentStats.totalSelfRequests,
-          session_uptime: Math.floor((Date.now() - currentStats.sessionStartTime) / 1000),
-          peak_t_s: currentStats.peakTokensPerSecond,
-          avg_t_s: 0,
-          low_t_s: currentStats.lowestTokensPerSecond === Infinity ? 0 : currentStats.lowestTokensPerSecond,
-          response_avg_time: currentStats.totalRequestsServed > 0
-            ? Math.floor(currentStats.totalProviderTimeMs / currentStats.totalRequestsServed)
+          // Provider mode stats
+          pro_mode_requests_served: providerModeStats.requestsServed,
+          pro_mode_tokens_generated: providerModeStats.tokensGenerated,
+          pro_mode_self_requests: providerModeStats.selfRequests,
+          pro_mode_peak_t_s: providerModeStats.peakTokensPerSecond,
+          pro_mode_avg_t_s: 0,
+          pro_mode_low_t_s: providerModeStats.lowestTokensPerSecond === Infinity ? 0 : providerModeStats.lowestTokensPerSecond,
+          pro_mode_response_avg_time: providerModeStats.requestsServed > 0
+            ? Math.floor(providerModeStats.providerTimeMs / providerModeStats.requestsServed)
             : 0,
+          pro_mode_session_uptime: proSessionUptime,
+          pro_mode_total_uptime: providerModeEnabled ? providerModeStats.totalUptime + proSessionUptime : providerModeStats.totalUptime,
+          // Worker mode stats
+          work_mode_tasks_processed: workerModeStats.tasksProcessed,
+          work_mode_tasks_failed: workerModeStats.tasksFailed,
+          work_mode_total_detections: workerModeStats.totalDetections,
+          work_mode_avg_processing_time: workerModeStats.avgProcessingTimeMs,
+          work_mode_session_uptime: workSessionUptime,
+          work_mode_total_uptime: imageWorkerEnabled ? workerModeStats.totalUptime + workSessionUptime : workerModeStats.totalUptime,
+          // Node total uptime (only add session uptime if mode is enabled)
+          node_total_uptime: (providerModeEnabled ? providerModeStats.totalUptime + proSessionUptime : providerModeStats.totalUptime)
+            + (imageWorkerEnabled ? workerModeStats.totalUptime + workSessionUptime : workerModeStats.totalUptime),
+          node_last_active_time: new Date().toISOString(),
         };
       });
       console.log('[AppStore] ✅ Periodic stats sync started (every 5 minutes)');
@@ -549,19 +680,38 @@ export const useAppStore = create<AppState>((set, get) => ({
       const { loadCachedStats } = await import('../services/NodeStatsService');
       const cached = await loadCachedStats();
       if (cached) {
+        const proModeSessionStart = cached.pro_mode_session_uptime
+          ? Date.now() - (cached.pro_mode_session_uptime * 1000)
+          : Date.now();
+
+        const workModeSessionStart = cached.work_mode_session_uptime
+          ? Date.now() - (cached.work_mode_session_uptime * 1000)
+          : Date.now();
+
         set({
           backendNodeStats: cached,
-          // Also initialize local stats from cache
-          nodeStats: {
-            totalRequestsServed: cached.served_requests || 0,
-            totalTokensGenerated: cached.tokens_generated || 0,
-            totalProviderTimeMs: 0,
-            totalSelfRequests: cached.self_requests || 0,
-            totalSelfTokensReceived: 0,
-            totalSelfTimeMs: 0,
-            peakTokensPerSecond: cached.peak_t_s || 0,
-            lowestTokensPerSecond: cached.low_t_s === 0 ? Infinity : cached.low_t_s,
-            sessionStartTime: get().nodeStats.sessionStartTime,
+          providerModeStats: {
+            requestsServed: cached.pro_mode_requests_served || 0,
+            tokensGenerated: cached.pro_mode_tokens_generated || 0,
+            selfRequests: cached.pro_mode_self_requests || 0,
+            selfTokensReceived: 0,
+            providerTimeMs: 0,
+            selfTimeMs: 0,
+            peakTokensPerSecond: cached.pro_mode_peak_t_s || 0,
+            lowestTokensPerSecond: cached.pro_mode_low_t_s === 0 ? Infinity : cached.pro_mode_low_t_s,
+            sessionStartTime: proModeSessionStart,
+            sessionUptime: cached.pro_mode_session_uptime || 0,
+            totalUptime: cached.pro_mode_total_uptime || 0,
+            lastActivityTime: Date.now(),
+          },
+          workerModeStats: {
+            tasksProcessed: cached.work_mode_tasks_processed || 0,
+            tasksFailed: cached.work_mode_tasks_failed || 0,
+            totalDetections: cached.work_mode_total_detections || 0,
+            avgProcessingTimeMs: cached.work_mode_avg_processing_time || 0,
+            sessionStartTime: workModeSessionStart,
+            sessionUptime: cached.work_mode_session_uptime || 0,
+            totalUptime: cached.work_mode_total_uptime || 0,
             lastActivityTime: Date.now(),
           }
         });
@@ -570,21 +720,33 @@ export const useAppStore = create<AppState>((set, get) => ({
         // Start periodic sync even with cached data
         const { startPeriodicSync } = await import('../services/NodeStatsService');
         startPeriodicSync(() => {
-          const { nodeStats: currentStats, nodeId: currentNodeId } = get();
+          const { providerModeStats, workerModeStats, nodeId: currentNodeId } = get();
           if (!currentNodeId) return null as any;
+
+          const proSessionUptime = Math.floor((Date.now() - providerModeStats.sessionStartTime) / 1000);
+          const workSessionUptime = Math.floor((Date.now() - workerModeStats.sessionStartTime) / 1000);
 
           return {
             node_id: currentNodeId,
-            served_requests: currentStats.totalRequestsServed,
-            tokens_generated: currentStats.totalTokensGenerated,
-            self_requests: currentStats.totalSelfRequests,
-            session_uptime: Math.floor((Date.now() - currentStats.sessionStartTime) / 1000),
-            peak_t_s: currentStats.peakTokensPerSecond,
-            avg_t_s: 0,
-            low_t_s: currentStats.lowestTokensPerSecond === Infinity ? 0 : currentStats.lowestTokensPerSecond,
-            response_avg_time: currentStats.totalRequestsServed > 0
-              ? Math.floor(currentStats.totalProviderTimeMs / currentStats.totalRequestsServed)
+            pro_mode_requests_served: providerModeStats.requestsServed,
+            pro_mode_tokens_generated: providerModeStats.tokensGenerated,
+            pro_mode_self_requests: providerModeStats.selfRequests,
+            pro_mode_peak_t_s: providerModeStats.peakTokensPerSecond,
+            pro_mode_avg_t_s: 0,
+            pro_mode_low_t_s: providerModeStats.lowestTokensPerSecond === Infinity ? 0 : providerModeStats.lowestTokensPerSecond,
+            pro_mode_response_avg_time: providerModeStats.requestsServed > 0
+              ? Math.floor(providerModeStats.providerTimeMs / providerModeStats.requestsServed)
               : 0,
+            pro_mode_session_uptime: proSessionUptime,
+            pro_mode_total_uptime: providerModeStats.totalUptime + proSessionUptime,
+            work_mode_tasks_processed: workerModeStats.tasksProcessed,
+            work_mode_tasks_failed: workerModeStats.tasksFailed,
+            work_mode_total_detections: workerModeStats.totalDetections,
+            work_mode_avg_processing_time: workerModeStats.avgProcessingTimeMs,
+            work_mode_session_uptime: workSessionUptime,
+            work_mode_total_uptime: workerModeStats.totalUptime + workSessionUptime,
+            node_total_uptime: (providerModeStats.totalUptime + proSessionUptime) + (workerModeStats.totalUptime + workSessionUptime),
+            node_last_active_time: new Date().toISOString(),
           };
         });
         console.log('[AppStore] ✅ Periodic stats sync started (from cache)');
@@ -595,7 +757,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   syncNodeStats: async () => {
     try {
       const nodeId = get().nodeId;
-      const nodeStats = get().nodeStats; // Local stats
+      const { providerModeStats, workerModeStats, providerModeEnabled, imageWorkerEnabled } = get();
 
       if (!nodeId) {
         console.log('[AppStore] No nodeId, skipping stats sync');
@@ -604,19 +766,40 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       const { updateNodeStats } = await import('../services/NodeStatsService');
 
-      // Map local NodeStatistics to backend NodeStats format
+      // Only calculate session uptime for modes that are actually enabled
+      const proSessionUptime = providerModeEnabled
+        ? Math.floor((Date.now() - providerModeStats.sessionStartTime) / 1000)
+        : 0;
+      const workSessionUptime = imageWorkerEnabled
+        ? Math.floor((Date.now() - workerModeStats.sessionStartTime) / 1000)
+        : 0;
+
+      // Map to new backend format
       const payload = {
         node_id: nodeId,
-        served_requests: nodeStats.totalRequestsServed,
-        tokens_generated: nodeStats.totalTokensGenerated,
-        self_requests: nodeStats.totalSelfRequests,
-        session_uptime: Math.floor((Date.now() - nodeStats.sessionStartTime) / 1000),
-        peak_t_s: nodeStats.peakTokensPerSecond,
-        avg_t_s: 0, // Calculate average if needed
-        low_t_s: nodeStats.lowestTokensPerSecond === Infinity ? 0 : nodeStats.lowestTokensPerSecond,
-        response_avg_time: nodeStats.totalRequestsServed > 0
-          ? Math.floor(nodeStats.totalProviderTimeMs / nodeStats.totalRequestsServed)
+        // Provider mode stats
+        pro_mode_requests_served: providerModeStats.requestsServed,
+        pro_mode_tokens_generated: providerModeStats.tokensGenerated,
+        pro_mode_self_requests: providerModeStats.selfRequests,
+        pro_mode_peak_t_s: providerModeStats.peakTokensPerSecond,
+        pro_mode_avg_t_s: 0,
+        pro_mode_low_t_s: providerModeStats.lowestTokensPerSecond === Infinity ? 0 : providerModeStats.lowestTokensPerSecond,
+        pro_mode_response_avg_time: providerModeStats.requestsServed > 0
+          ? Math.floor(providerModeStats.providerTimeMs / providerModeStats.requestsServed)
           : 0,
+        pro_mode_session_uptime: proSessionUptime,
+        pro_mode_total_uptime: providerModeEnabled ? providerModeStats.totalUptime + proSessionUptime : providerModeStats.totalUptime,
+        // Worker mode stats
+        work_mode_tasks_processed: workerModeStats.tasksProcessed,
+        work_mode_tasks_failed: workerModeStats.tasksFailed,
+        work_mode_total_detections: workerModeStats.totalDetections,
+        work_mode_avg_processing_time: workerModeStats.avgProcessingTimeMs,
+        work_mode_session_uptime: workSessionUptime,
+        work_mode_total_uptime: imageWorkerEnabled ? workerModeStats.totalUptime + workSessionUptime : workerModeStats.totalUptime,
+        // Node total uptime (only add session uptime if mode is enabled)
+        node_total_uptime: (providerModeEnabled ? providerModeStats.totalUptime + proSessionUptime : providerModeStats.totalUptime)
+          + (imageWorkerEnabled ? workerModeStats.totalUptime + workSessionUptime : workerModeStats.totalUptime),
+        node_last_active_time: new Date().toISOString(),
       };
 
       const updatedStats = await updateNodeStats(payload);
@@ -646,8 +829,41 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setProviderModeEnabled: async (v) => {
     console.log(`[AppStore] 🔧 setProviderModeEnabled called with: ${v}`);
-    set({ providerModeEnabled: v });
-    console.log(`[AppStore] ✅ State updated - providerModeEnabled: ${v}`);
+    const { providerModeStats, modelDownloaded } = get();
+
+    // Validate: Cannot enable provider mode without LLM model
+    if (v && !modelDownloaded) {
+      console.error('[AppStore] ❌ Cannot enable provider mode - LLM model not downloaded');
+      throw new Error('LLM model must be downloaded before enabling provider mode');
+    }
+
+    // If enabling, reset session start time
+    // If disabling, save current session to total uptime
+    if (v) {
+      // Enabling: Start new session
+      set({
+        providerModeEnabled: v,
+        providerModeStats: {
+          ...providerModeStats,
+          sessionStartTime: Date.now(),
+        }
+      });
+      console.log(`[AppStore] ✅ Provider mode enabled - new session started`);
+    } else {
+      // Disabling: Save session uptime to total
+      const sessionDuration = Math.floor((Date.now() - providerModeStats.sessionStartTime) / 1000);
+      set({
+        providerModeEnabled: v,
+        providerModeStats: {
+          ...providerModeStats,
+          totalUptime: providerModeStats.totalUptime + sessionDuration,
+          sessionStartTime: Date.now(), // Reset for next time
+          sessionUptime: 0,
+        }
+      });
+      console.log(`[AppStore] ✅ Provider mode disabled - session saved (${sessionDuration}s)`);
+    }
+
     try {
       await AsyncStorage.setItem('providerModeEnabled', v ? 'true' : 'false');
       console.log(`[AppStore] 💾 AsyncStorage saved - providerModeEnabled: ${v}`);
@@ -657,6 +873,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (nodeId) {
         await get().updateNodeSettings({ provider_mode_enabled: v });
         console.log(`[AppStore] ☁️ Backend synced - provider_mode_enabled: ${v}`);
+
+        // Sync stats to backend immediately when disabling
+        if (!v) {
+          await get().syncNodeStats();
+        }
       }
     } catch (e) {
       console.error('[AppStore] Failed to save provider mode state:', e);
@@ -709,48 +930,136 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Update provider stats when serving a request
   updateProviderStats: async (tokensGenerated, durationMs) => {
-    const { nodeStats, nodeId } = get();
+    const { providerModeStats, workerModeStats, nodeId } = get();
 
     // Calculate tokens per second
     const tokensPerSecond = durationMs > 0 ? (tokensGenerated / (durationMs / 1000)) : 0;
 
     // Update peak and lowest
-    const newPeak = Math.max(nodeStats.peakTokensPerSecond, tokensPerSecond);
-    const newLowest = nodeStats.lowestTokensPerSecond === Infinity
+    const newPeak = Math.max(providerModeStats.peakTokensPerSecond, tokensPerSecond);
+    const newLowest = providerModeStats.lowestTokensPerSecond === Infinity
       ? tokensPerSecond
-      : Math.min(nodeStats.lowestTokensPerSecond, tokensPerSecond);
+      : Math.min(providerModeStats.lowestTokensPerSecond, tokensPerSecond);
 
-    const updatedStats = {
-      ...nodeStats,
-      totalRequestsServed: nodeStats.totalRequestsServed + 1,
-      totalTokensGenerated: nodeStats.totalTokensGenerated + tokensGenerated,
-      totalProviderTimeMs: nodeStats.totalProviderTimeMs + durationMs,
+    const updatedStats: ProviderModeStats = {
+      ...providerModeStats,
+      requestsServed: providerModeStats.requestsServed + 1,
+      tokensGenerated: providerModeStats.tokensGenerated + tokensGenerated,
+      providerTimeMs: providerModeStats.providerTimeMs + durationMs,
       peakTokensPerSecond: newPeak,
       lowestTokensPerSecond: newLowest,
       lastActivityTime: Date.now(),
     };
 
-    set({ nodeStats: updatedStats });
+    set({ providerModeStats: updatedStats });
 
     // Cache to AsyncStorage immediately
     if (nodeId) {
       try {
         const { saveCachedStats } = await import('../services/NodeStatsService');
+        const { providerModeEnabled, imageWorkerEnabled } = get();
+
+        // Only calculate session uptime for modes that are actually enabled
+        const proSessionUptime = providerModeEnabled
+          ? Math.floor((Date.now() - updatedStats.sessionStartTime) / 1000)
+          : 0;
+        const workSessionUptime = imageWorkerEnabled
+          ? Math.floor((Date.now() - workerModeStats.sessionStartTime) / 1000)
+          : 0;
+
         await saveCachedStats({
           node_id: nodeId,
-          served_requests: updatedStats.totalRequestsServed,
-          tokens_generated: updatedStats.totalTokensGenerated,
-          self_requests: updatedStats.totalSelfRequests,
-          session_uptime: Math.floor((Date.now() - updatedStats.sessionStartTime) / 1000),
-          peak_t_s: updatedStats.peakTokensPerSecond,
-          avg_t_s: 0,
-          low_t_s: updatedStats.lowestTokensPerSecond === Infinity ? 0 : updatedStats.lowestTokensPerSecond,
-          response_avg_time: updatedStats.totalRequestsServed > 0
-            ? Math.floor(updatedStats.totalProviderTimeMs / updatedStats.totalRequestsServed)
+          // Provider mode stats
+          pro_mode_requests_served: updatedStats.requestsServed,
+          pro_mode_tokens_generated: updatedStats.tokensGenerated,
+          pro_mode_self_requests: updatedStats.selfRequests,
+          pro_mode_peak_t_s: updatedStats.peakTokensPerSecond,
+          pro_mode_avg_t_s: 0,
+          pro_mode_low_t_s: updatedStats.lowestTokensPerSecond === Infinity ? 0 : updatedStats.lowestTokensPerSecond,
+          pro_mode_response_avg_time: updatedStats.requestsServed > 0
+            ? Math.floor(updatedStats.providerTimeMs / updatedStats.requestsServed)
             : 0,
+          pro_mode_session_uptime: proSessionUptime,
+          pro_mode_total_uptime: providerModeEnabled ? updatedStats.totalUptime + proSessionUptime : updatedStats.totalUptime,
+          // Worker mode stats (keep existing)
+          work_mode_tasks_processed: workerModeStats.tasksProcessed,
+          work_mode_tasks_failed: workerModeStats.tasksFailed,
+          work_mode_total_detections: workerModeStats.totalDetections,
+          work_mode_avg_processing_time: workerModeStats.avgProcessingTimeMs,
+          work_mode_session_uptime: workSessionUptime,
+          work_mode_total_uptime: imageWorkerEnabled ? workerModeStats.totalUptime + workSessionUptime : workerModeStats.totalUptime,
+          // Node total (only add session uptime if mode is enabled)
+          node_total_uptime: (providerModeEnabled ? updatedStats.totalUptime + proSessionUptime : updatedStats.totalUptime)
+            + (imageWorkerEnabled ? workerModeStats.totalUptime + workSessionUptime : workerModeStats.totalUptime),
+          node_last_active_time: new Date().toISOString(),
         });
       } catch (error) {
         console.error('[AppStore] Failed to cache provider stats:', error);
+      }
+    }
+  },
+
+  // Update worker mode stats when processing a task
+  updateWorkerModeStats: async (detections, processingTimeMs, success) => {
+    const { providerModeStats, workerModeStats, nodeId } = get();
+
+    // Update stats based on success/failure
+    const updatedStats: WorkerModeStats = {
+      ...workerModeStats,
+      tasksProcessed: success ? workerModeStats.tasksProcessed + 1 : workerModeStats.tasksProcessed,
+      tasksFailed: success ? workerModeStats.tasksFailed : workerModeStats.tasksFailed + 1,
+      totalDetections: workerModeStats.totalDetections + detections,
+      // Update running average: (old_avg * old_count + new_value) / new_count
+      avgProcessingTimeMs: workerModeStats.tasksProcessed > 0
+        ? ((workerModeStats.avgProcessingTimeMs * workerModeStats.tasksProcessed) + processingTimeMs) / (workerModeStats.tasksProcessed + 1)
+        : processingTimeMs,
+      lastActivityTime: Date.now(),
+    };
+
+    set({ workerModeStats: updatedStats });
+
+    // Cache to AsyncStorage immediately
+    if (nodeId) {
+      try {
+        const { saveCachedStats } = await import('../services/NodeStatsService');
+        const { providerModeEnabled, imageWorkerEnabled } = get();
+
+        // Only calculate session uptime for modes that are actually enabled
+        const proSessionUptime = providerModeEnabled
+          ? Math.floor((Date.now() - providerModeStats.sessionStartTime) / 1000)
+          : 0;
+        const workSessionUptime = imageWorkerEnabled
+          ? Math.floor((Date.now() - updatedStats.sessionStartTime) / 1000)
+          : 0;
+
+        await saveCachedStats({
+          node_id: nodeId,
+          // Provider mode stats (keep existing)
+          pro_mode_requests_served: providerModeStats.requestsServed,
+          pro_mode_tokens_generated: providerModeStats.tokensGenerated,
+          pro_mode_self_requests: providerModeStats.selfRequests,
+          pro_mode_peak_t_s: providerModeStats.peakTokensPerSecond,
+          pro_mode_avg_t_s: 0,
+          pro_mode_low_t_s: providerModeStats.lowestTokensPerSecond === Infinity ? 0 : providerModeStats.lowestTokensPerSecond,
+          pro_mode_response_avg_time: providerModeStats.requestsServed > 0
+            ? Math.floor(providerModeStats.providerTimeMs / providerModeStats.requestsServed)
+            : 0,
+          pro_mode_session_uptime: proSessionUptime,
+          pro_mode_total_uptime: providerModeEnabled ? providerModeStats.totalUptime + proSessionUptime : providerModeStats.totalUptime,
+          // Worker mode stats (updated)
+          work_mode_tasks_processed: updatedStats.tasksProcessed,
+          work_mode_tasks_failed: updatedStats.tasksFailed,
+          work_mode_total_detections: updatedStats.totalDetections,
+          work_mode_avg_processing_time: updatedStats.avgProcessingTimeMs,
+          work_mode_session_uptime: workSessionUptime,
+          work_mode_total_uptime: imageWorkerEnabled ? updatedStats.totalUptime + workSessionUptime : updatedStats.totalUptime,
+          // Node total (only add session uptime if mode is enabled)
+          node_total_uptime: (providerModeEnabled ? providerModeStats.totalUptime + proSessionUptime : providerModeStats.totalUptime)
+            + (imageWorkerEnabled ? updatedStats.totalUptime + workSessionUptime : updatedStats.totalUptime),
+          node_last_active_time: new Date().toISOString(),
+        });
+      } catch (error) {
+        console.error('[AppStore] Failed to cache worker stats:', error);
       }
     }
   },
@@ -851,51 +1160,81 @@ export const useAppStore = create<AppState>((set, get) => ({
           : m,
       );
 
-      // Update self request statistics
+      // Update self request statistics (consumer mode)
       const tokensPerSecond = durationMs > 0 ? ((tokensGenerated || 0) / (durationMs / 1000)) : 0;
 
       // Update peak and lowest t/s for self requests too
-      const newPeak = Math.max(s.nodeStats.peakTokensPerSecond, tokensPerSecond);
-      const newLowest = s.nodeStats.lowestTokensPerSecond === Infinity
+      const newPeak = Math.max(s.providerModeStats.peakTokensPerSecond, tokensPerSecond);
+      const newLowest = s.providerModeStats.lowestTokensPerSecond === Infinity
         ? tokensPerSecond
-        : Math.min(s.nodeStats.lowestTokensPerSecond, tokensPerSecond);
+        : Math.min(s.providerModeStats.lowestTokensPerSecond, tokensPerSecond);
 
       const updatedStats = {
-        ...s.nodeStats,
-        totalSelfRequests: s.nodeStats.totalSelfRequests + 1,
-        totalSelfTokensReceived: s.nodeStats.totalSelfTokensReceived + (tokensGenerated || 0),
-        totalSelfTimeMs: s.nodeStats.totalSelfTimeMs + (durationMs || 0),
+        ...s.providerModeStats,
+        selfRequests: s.providerModeStats.selfRequests + 1,
+        selfTokensReceived: s.providerModeStats.selfTokensReceived + (tokensGenerated || 0),
+        selfTimeMs: s.providerModeStats.selfTimeMs + (durationMs || 0),
         peakTokensPerSecond: newPeak,
         lowestTokensPerSecond: newLowest,
         lastActivityTime: Date.now(),
       };
 
       // Save stats to local cache asynchronously (for crash resilience)
+      // Also sync to backend immediately for self-requests
       setTimeout(async () => {
         try {
-          const { saveCachedStats } = await import('../services/NodeStatsService');
-          const { nodeStats, nodeId } = get();
+          const { saveCachedStats, updateNodeStats } = await import('../services/NodeStatsService');
+          const { workerModeStats, nodeId, providerModeEnabled, imageWorkerEnabled } = get();
           if (nodeId) {
-            await saveCachedStats({
+            // Only calculate session uptime for modes that are actually enabled
+            const proSessionUptime = providerModeEnabled
+              ? Math.floor((Date.now() - updatedStats.sessionStartTime) / 1000)
+              : 0;
+            const workSessionUptime = imageWorkerEnabled
+              ? Math.floor((Date.now() - workerModeStats.sessionStartTime) / 1000)
+              : 0;
+
+            const statsPayload = {
               node_id: nodeId,
-              served_requests: nodeStats.totalRequestsServed,
-              tokens_generated: nodeStats.totalTokensGenerated,
-              self_requests: nodeStats.totalSelfRequests,
-              session_uptime: Math.floor((Date.now() - nodeStats.sessionStartTime) / 1000),
-              peak_t_s: nodeStats.peakTokensPerSecond,
-              avg_t_s: 0,
-              low_t_s: nodeStats.lowestTokensPerSecond === Infinity ? 0 : nodeStats.lowestTokensPerSecond,
-              response_avg_time: nodeStats.totalRequestsServed > 0
-                ? Math.floor(nodeStats.totalProviderTimeMs / nodeStats.totalRequestsServed)
+              // Provider mode stats (using updatedStats from closure)
+              pro_mode_requests_served: updatedStats.requestsServed,
+              pro_mode_tokens_generated: updatedStats.tokensGenerated,
+              pro_mode_self_requests: updatedStats.selfRequests,
+              pro_mode_peak_t_s: updatedStats.peakTokensPerSecond,
+              pro_mode_avg_t_s: 0,
+              pro_mode_low_t_s: updatedStats.lowestTokensPerSecond === Infinity ? 0 : updatedStats.lowestTokensPerSecond,
+              pro_mode_response_avg_time: updatedStats.requestsServed > 0
+                ? Math.floor(updatedStats.providerTimeMs / updatedStats.requestsServed)
                 : 0,
-            });
+              pro_mode_session_uptime: proSessionUptime,
+              pro_mode_total_uptime: providerModeEnabled ? updatedStats.totalUptime + proSessionUptime : updatedStats.totalUptime,
+              // Worker mode stats
+              work_mode_tasks_processed: workerModeStats.tasksProcessed,
+              work_mode_tasks_failed: workerModeStats.tasksFailed,
+              work_mode_total_detections: workerModeStats.totalDetections,
+              work_mode_avg_processing_time: workerModeStats.avgProcessingTimeMs,
+              work_mode_session_uptime: workSessionUptime,
+              work_mode_total_uptime: imageWorkerEnabled ? workerModeStats.totalUptime + workSessionUptime : workerModeStats.totalUptime,
+              // Node total (only add session uptime if mode is enabled)
+              node_total_uptime: (providerModeEnabled ? updatedStats.totalUptime + proSessionUptime : updatedStats.totalUptime)
+                + (imageWorkerEnabled ? workerModeStats.totalUptime + workSessionUptime : workerModeStats.totalUptime),
+              node_last_active_time: new Date().toISOString(),
+            };
+
+            // Save to local cache
+            await saveCachedStats(statsPayload);
+            console.log('[AppStore] Stats cached after self-request');
+
+            // Sync to backend immediately for self-requests
+            await updateNodeStats(statsPayload);
+            console.log('[AppStore] Stats synced to backend after self-request');
           }
         } catch (error) {
-          console.error('[AppStore] Failed to cache stats:', error);
+          console.error('[AppStore] Failed to cache/sync stats:', error);
         }
       }, 0);
 
-      return { messages, isGenerating: false, currentRequestId: null, nodeStats: updatedStats };
+      return { messages, isGenerating: false, currentRequestId: null, providerModeStats: updatedStats };
     }),
 
   setGenerating: (v) => set({ isGenerating: v }),
@@ -1072,15 +1411,56 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Load node statistics
   // Image Worker Actions
   setImageWorkerEnabled: async (v) => {
-    set({ imageWorkerEnabled: v });
+    console.log(`[AppStore] 🔧 setImageWorkerEnabled called with: ${v}`);
+    const { workerModeStats, visionModelsDownloaded } = get();
+
+    // Validate: Cannot enable worker mode without vision models
+    if (v && !visionModelsDownloaded) {
+      console.error('[AppStore] ❌ Cannot enable worker mode - Vision models not downloaded');
+      throw new Error('Vision models must be downloaded before enabling worker mode');
+    }
+
+    // If enabling, reset session start time
+    // If disabling, save current session to total uptime
+    if (v) {
+      // Enabling: Start new session
+      set({
+        imageWorkerEnabled: v,
+        workerModeStats: {
+          ...workerModeStats,
+          sessionStartTime: Date.now(),
+        }
+      });
+      console.log(`[AppStore] ✅ Worker mode enabled - new session started`);
+    } else {
+      // Disabling: Save session uptime to total
+      const sessionDuration = Math.floor((Date.now() - workerModeStats.sessionStartTime) / 1000);
+      set({
+        imageWorkerEnabled: v,
+        workerModeStats: {
+          ...workerModeStats,
+          totalUptime: workerModeStats.totalUptime + sessionDuration,
+          sessionStartTime: Date.now(), // Reset for next time
+          sessionUptime: 0,
+        }
+      });
+      console.log(`[AppStore] ✅ Worker mode disabled - session saved (${sessionDuration}s)`);
+    }
+
     try {
       await AsyncStorage.setItem('imageWorkerEnabled', v ? 'true' : 'false');
+      console.log(`[AppStore] 💾 AsyncStorage saved - imageWorkerEnabled: ${v}`);
 
       // Sync to backend
       const nodeId = get().nodeId;
       if (nodeId) {
         await get().updateNodeSettings({ worker_mode_enabled: v });
         console.log(`[AppStore] ☁️ Backend synced - worker_mode_enabled: ${v}`);
+
+        // Sync stats to backend immediately when disabling
+        if (!v) {
+          await get().syncNodeStats();
+        }
       }
     } catch (e) {
       console.error('[AppStore] Failed to save worker enabled state:', e);

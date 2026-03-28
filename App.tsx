@@ -75,12 +75,31 @@ export default function App() {
       // Check auth status first
       await checkAuthStatus();
 
+      // Load local state first
       await loadUserProfile();
       await loadProviderModeEnabled();
       await loadLocalInferenceMode();
       await loadImageWorkerEnabled();
       await loadCoordinatorUrl();
+
+      // Check model download state BEFORE loading settings (validation needs this)
       await checkModelDownloadState();
+
+      // If authenticated, load settings and stats from backend
+      // This will validate and correct any invalid states (e.g., mode enabled without model)
+      const { isAuthenticated, nodeId, loadNodeSettings, loadNodeStats } = useAppStore.getState();
+      if (isAuthenticated && nodeId) {
+        console.log('[App] 🔄 Loading node settings and stats from backend...');
+        try {
+          await Promise.all([
+            loadNodeSettings(),
+            loadNodeStats(),
+          ]);
+          console.log('[App] ✅ Node settings and stats loaded');
+        } catch (error) {
+          console.error('[App] ❌ Failed to load node settings/stats:', error);
+        }
+      }
 
       // Load LLM model if provider mode is enabled
       const {
@@ -337,6 +356,15 @@ export default function App() {
         // Auto-disable provider mode if battery falls below threshold
         if (batteryPercent < batteryThreshold) {
           addLog(`⚠️ Battery low (${batteryPercent}%) - disabling provider mode`);
+
+          // Unload model
+          if (llamaEngine.isLoaded()) {
+            addLog('⏳ Unloading LLM model...');
+            await llamaEngine.unload();
+            setModelLoaded(false);
+            addLog('✅ LLM model unloaded');
+          }
+
           await setProviderModeEnabled(false);
         }
       } catch (error) {
