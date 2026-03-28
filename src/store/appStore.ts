@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { ProviderInfo, ChatMessage, PeerRole } from '../network/PeerProtocol';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COORDINATOR_URL } from '../config';
+import type { NodeSettings } from '../services/NodeSettingsService';
+import type { NodeStats } from '../services/NodeStatsService';
 
 export interface UserProfile {
   displayName: string;
@@ -59,6 +61,12 @@ interface AppState {
 
   // User profile
   userProfile: UserProfile | null;
+
+  // Node settings (synced with backend)
+  nodeSettings: NodeSettings | null;
+
+  // Node statistics (synced with backend periodically)
+  backendNodeStats: NodeStats | null;
 
   // Connection
   connected: boolean;
@@ -127,6 +135,18 @@ interface AppState {
   setUserProfile: (profile: UserProfile) => void;
   setOnboardingCompleted: (v: boolean) => void;
   loadUserProfile: () => Promise<void>;
+
+  // Node Settings Actions
+  loadNodeSettings: () => Promise<void>;
+  updateNodeSettings: (settings: Partial<NodeSettings>) => Promise<void>;
+  setNodeSettings: (settings: NodeSettings | null) => void;
+
+  // Node Stats Actions
+  loadNodeStats: () => Promise<void>;
+  syncNodeStats: () => Promise<void>;
+  setBackendNodeStats: (stats: NodeStats | null) => void;
+  updateLocalNodeStat: (key: keyof NodeStats, value: number) => void;
+
   setProviderModeEnabled: (v: boolean) => Promise<void>;
   loadProviderModeEnabled: () => Promise<void>;
   setBatteryThreshold: (threshold: number) => Promise<void>;
@@ -136,6 +156,7 @@ interface AppState {
   setModelLoadProgress: (v: number) => void;
   setModelError: (e: string | null) => void;
   incrementJobsServed: () => void;
+  updateProviderStats: (tokensGenerated: number, durationMs: number) => Promise<void>;
   setModelDownloaded: (v: boolean) => void;
   setModelDownloading: (v: boolean) => void;
   setModelDownloadProgress: (v: number) => void;
@@ -163,8 +184,6 @@ interface AppState {
   addLog: (msg: string) => void;
   loadLogs: () => Promise<void>;
   clearLogs: () => void;
-  loadNodeStats: () => Promise<void>;
-  saveNodeStats: () => Promise<void>;
   reset: () => void;
 
   // Image Worker Actions
@@ -189,6 +208,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   walletAddress: null,
   nodeId: null,
   userProfile: null,
+  nodeSettings: null,
+  backendNodeStats: null,
   providerModeEnabled: false,
   modelLoaded: false,
   modelLoading: false,
@@ -334,6 +355,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         await relayClient.updatePeerIdFromWallet(walletAddress);
       }
 
+      // Load node settings and stats from backend
+      console.log('[AppStore] Loading node settings and stats...');
+      await Promise.all([
+        get().loadNodeSettings(),
+        get().loadNodeStats(),
+      ]);
+
       console.log('[AppStore] Auth success handled - peerId:', peerId, 'displayName:', displayName, 'nodeId:', nodeId);
     } catch (error) {
       console.error('[AppStore] Failed to handle auth success:', error);
@@ -344,16 +372,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const { logout } = await import('../services/AuthService');
       const { clearAuthTokens } = await import('../api/httpClient');
+      const { clearCachedSettings } = await import('../services/NodeSettingsService');
+      const { clearCachedStats, stopPeriodicSync } = await import('../services/NodeStatsService');
+
+      // Stop stats sync
+      stopPeriodicSync();
 
       await Promise.all([
         logout(),
         clearAuthTokens(),
+        clearCachedSettings(),
+        clearCachedStats(),
       ]);
 
       set({
         isAuthenticated: false,
         walletAddress: null,
         nodeId: null,
+        userProfile: null,
+        nodeSettings: null,
+        backendNodeStats: null,
       });
 
       console.log('[AppStore] Logout completed');
@@ -385,6 +423,227 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  // Node Settings Actions
+  loadNodeSettings: async () => {
+    try {
+      const nodeId = get().nodeId;
+      if (!nodeId) {
+        console.log('[AppStore] No nodeId, skipping settings load');
+        return;
+      }
+
+      const { fetchNodeSettings } = await import('../services/NodeSettingsService');
+      const settings = await fetchNodeSettings(nodeId);
+      set({ nodeSettings: settings });
+      console.log('[AppStore] Node settings loaded:', settings);
+    } catch (error) {
+      console.error('[AppStore] Failed to load node settings:', error);
+      // Try to load cached settings
+      const { loadCachedSettings } = await import('../services/NodeSettingsService');
+      const cached = await loadCachedSettings();
+      if (cached) {
+        set({ nodeSettings: cached });
+        console.log('[AppStore] Using cached node settings');
+      }
+    }
+  },
+
+  updateNodeSettings: async (partialSettings) => {
+    try {
+      const nodeId = get().nodeId;
+      if (!nodeId) {
+        throw new Error('No nodeId available');
+      }
+
+      const { updateNodeSettings } = await import('../services/NodeSettingsService');
+      const payload = {
+        node_id: nodeId,
+        ...partialSettings,
+      };
+
+      const updatedSettings = await updateNodeSettings(payload);
+      set({ nodeSettings: updatedSettings });
+      console.log('[AppStore] Node settings updated:', updatedSettings);
+
+      // Update local state if settings affect app behavior
+      if (partialSettings.worker_mode_enabled !== undefined) {
+        set({ imageWorkerEnabled: partialSettings.worker_mode_enabled });
+      }
+      if (partialSettings.provider_mode_enabled !== undefined) {
+        set({ providerModeEnabled: partialSettings.provider_mode_enabled });
+      }
+      if (partialSettings.battery_threshold !== undefined) {
+        set({ batteryThreshold: partialSettings.battery_threshold });
+      }
+    } catch (error) {
+      console.error('[AppStore] Failed to update node settings:', error);
+      throw error;
+    }
+  },
+
+  setNodeSettings: (settings) => {
+    set({ nodeSettings: settings });
+  },
+
+  // Node Stats Actions
+  loadNodeStats: async () => {
+    try {
+      const nodeId = get().nodeId;
+      if (!nodeId) {
+        console.log('[AppStore] No nodeId, skipping stats load');
+        return;
+      }
+
+      const { fetchNodeStats } = await import('../services/NodeStatsService');
+      const backendStats = await fetchNodeStats(nodeId);
+
+      // ✅ CRITICAL: Initialize local nodeStats FROM backend values
+      // This prevents data loss when switching devices or reinstalling app
+      const currentNodeStats = get().nodeStats;
+      const currentSessionStart = currentNodeStats.sessionStartTime;
+
+      set({
+        backendNodeStats: backendStats,
+        // Initialize local stats with backend values + current session
+        nodeStats: {
+          // Use backend totals as baseline (prevents data loss on device switch)
+          totalRequestsServed: backendStats.served_requests || 0,
+          totalTokensGenerated: backendStats.tokens_generated || 0,
+          totalProviderTimeMs: 0, // Can't restore time, reset for this session
+          totalSelfRequests: backendStats.self_requests || 0,
+          totalSelfTokensReceived: 0, // Not tracked in backend yet
+          totalSelfTimeMs: 0, // Not tracked in backend yet
+          peakTokensPerSecond: backendStats.peak_t_s || 0,
+          lowestTokensPerSecond: backendStats.low_t_s === 0 ? Infinity : backendStats.low_t_s,
+          sessionStartTime: currentSessionStart, // Keep current session start
+          lastActivityTime: Date.now(),
+        }
+      });
+
+      console.log('[AppStore] ✅ Node stats loaded and local stats initialized from backend:', backendStats);
+
+      // Start periodic sync (every 5 minutes)
+      const { startPeriodicSync } = await import('../services/NodeStatsService');
+      startPeriodicSync(() => {
+        const { nodeStats: currentStats, nodeId: currentNodeId } = get();
+        if (!currentNodeId) return null as any;
+
+        return {
+          node_id: currentNodeId,
+          served_requests: currentStats.totalRequestsServed,
+          tokens_generated: currentStats.totalTokensGenerated,
+          self_requests: currentStats.totalSelfRequests,
+          session_uptime: Math.floor((Date.now() - currentStats.sessionStartTime) / 1000),
+          peak_t_s: currentStats.peakTokensPerSecond,
+          avg_t_s: 0,
+          low_t_s: currentStats.lowestTokensPerSecond === Infinity ? 0 : currentStats.lowestTokensPerSecond,
+          response_avg_time: currentStats.totalRequestsServed > 0
+            ? Math.floor(currentStats.totalProviderTimeMs / currentStats.totalRequestsServed)
+            : 0,
+        };
+      });
+      console.log('[AppStore] ✅ Periodic stats sync started (every 5 minutes)');
+    } catch (error) {
+      console.error('[AppStore] Failed to load node stats:', error);
+      // Try to load cached stats
+      const { loadCachedStats } = await import('../services/NodeStatsService');
+      const cached = await loadCachedStats();
+      if (cached) {
+        set({
+          backendNodeStats: cached,
+          // Also initialize local stats from cache
+          nodeStats: {
+            totalRequestsServed: cached.served_requests || 0,
+            totalTokensGenerated: cached.tokens_generated || 0,
+            totalProviderTimeMs: 0,
+            totalSelfRequests: cached.self_requests || 0,
+            totalSelfTokensReceived: 0,
+            totalSelfTimeMs: 0,
+            peakTokensPerSecond: cached.peak_t_s || 0,
+            lowestTokensPerSecond: cached.low_t_s === 0 ? Infinity : cached.low_t_s,
+            sessionStartTime: get().nodeStats.sessionStartTime,
+            lastActivityTime: Date.now(),
+          }
+        });
+        console.log('[AppStore] ✅ Using cached node stats and initialized local stats');
+
+        // Start periodic sync even with cached data
+        const { startPeriodicSync } = await import('../services/NodeStatsService');
+        startPeriodicSync(() => {
+          const { nodeStats: currentStats, nodeId: currentNodeId } = get();
+          if (!currentNodeId) return null as any;
+
+          return {
+            node_id: currentNodeId,
+            served_requests: currentStats.totalRequestsServed,
+            tokens_generated: currentStats.totalTokensGenerated,
+            self_requests: currentStats.totalSelfRequests,
+            session_uptime: Math.floor((Date.now() - currentStats.sessionStartTime) / 1000),
+            peak_t_s: currentStats.peakTokensPerSecond,
+            avg_t_s: 0,
+            low_t_s: currentStats.lowestTokensPerSecond === Infinity ? 0 : currentStats.lowestTokensPerSecond,
+            response_avg_time: currentStats.totalRequestsServed > 0
+              ? Math.floor(currentStats.totalProviderTimeMs / currentStats.totalRequestsServed)
+              : 0,
+          };
+        });
+        console.log('[AppStore] ✅ Periodic stats sync started (from cache)');
+      }
+    }
+  },
+
+  syncNodeStats: async () => {
+    try {
+      const nodeId = get().nodeId;
+      const nodeStats = get().nodeStats; // Local stats
+
+      if (!nodeId) {
+        console.log('[AppStore] No nodeId, skipping stats sync');
+        return;
+      }
+
+      const { updateNodeStats } = await import('../services/NodeStatsService');
+
+      // Map local NodeStatistics to backend NodeStats format
+      const payload = {
+        node_id: nodeId,
+        served_requests: nodeStats.totalRequestsServed,
+        tokens_generated: nodeStats.totalTokensGenerated,
+        self_requests: nodeStats.totalSelfRequests,
+        session_uptime: Math.floor((Date.now() - nodeStats.sessionStartTime) / 1000),
+        peak_t_s: nodeStats.peakTokensPerSecond,
+        avg_t_s: 0, // Calculate average if needed
+        low_t_s: nodeStats.lowestTokensPerSecond === Infinity ? 0 : nodeStats.lowestTokensPerSecond,
+        response_avg_time: nodeStats.totalRequestsServed > 0
+          ? Math.floor(nodeStats.totalProviderTimeMs / nodeStats.totalRequestsServed)
+          : 0,
+      };
+
+      const updatedStats = await updateNodeStats(payload);
+      set({ backendNodeStats: updatedStats });
+      console.log('[AppStore] Node stats synced to backend:', updatedStats);
+    } catch (error) {
+      console.error('[AppStore] Failed to sync node stats:', error);
+      // Non-blocking - stats sync failures shouldn't break the app
+    }
+  },
+
+  setBackendNodeStats: (stats) => {
+    set({ backendNodeStats: stats });
+  },
+
+  updateLocalNodeStat: (key, value) => {
+    const current = get().backendNodeStats;
+    if (current) {
+      set({
+        backendNodeStats: {
+          ...current,
+          [key]: value,
+        },
+      });
+    }
+  },
+
   setProviderModeEnabled: async (v) => {
     console.log(`[AppStore] 🔧 setProviderModeEnabled called with: ${v}`);
     set({ providerModeEnabled: v });
@@ -392,6 +651,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       await AsyncStorage.setItem('providerModeEnabled', v ? 'true' : 'false');
       console.log(`[AppStore] 💾 AsyncStorage saved - providerModeEnabled: ${v}`);
+
+      // Sync to backend
+      const nodeId = get().nodeId;
+      if (nodeId) {
+        await get().updateNodeSettings({ provider_mode_enabled: v });
+        console.log(`[AppStore] ☁️ Backend synced - provider_mode_enabled: ${v}`);
+      }
     } catch (e) {
       console.error('[AppStore] Failed to save provider mode state:', e);
     }
@@ -412,6 +678,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       await AsyncStorage.setItem('batteryThreshold', threshold.toString());
       set({ batteryThreshold: threshold });
+
+      // Sync to backend
+      const nodeId = get().nodeId;
+      if (nodeId) {
+        await get().updateNodeSettings({ battery_threshold: threshold });
+        console.log(`[AppStore] ☁️ Backend synced - battery_threshold: ${threshold}`);
+      }
     } catch (e) {
       console.error('[AppStore] Failed to save battery threshold:', e);
     }
@@ -433,6 +706,55 @@ export const useAppStore = create<AppState>((set, get) => ({
   setModelLoadProgress: (v) => set({ modelLoadProgress: v }),
   setModelError: (e) => set({ modelError: e }),
   incrementJobsServed: () => set((s) => ({ jobsServed: s.jobsServed + 1 })),
+
+  // Update provider stats when serving a request
+  updateProviderStats: async (tokensGenerated, durationMs) => {
+    const { nodeStats, nodeId } = get();
+
+    // Calculate tokens per second
+    const tokensPerSecond = durationMs > 0 ? (tokensGenerated / (durationMs / 1000)) : 0;
+
+    // Update peak and lowest
+    const newPeak = Math.max(nodeStats.peakTokensPerSecond, tokensPerSecond);
+    const newLowest = nodeStats.lowestTokensPerSecond === Infinity
+      ? tokensPerSecond
+      : Math.min(nodeStats.lowestTokensPerSecond, tokensPerSecond);
+
+    const updatedStats = {
+      ...nodeStats,
+      totalRequestsServed: nodeStats.totalRequestsServed + 1,
+      totalTokensGenerated: nodeStats.totalTokensGenerated + tokensGenerated,
+      totalProviderTimeMs: nodeStats.totalProviderTimeMs + durationMs,
+      peakTokensPerSecond: newPeak,
+      lowestTokensPerSecond: newLowest,
+      lastActivityTime: Date.now(),
+    };
+
+    set({ nodeStats: updatedStats });
+
+    // Cache to AsyncStorage immediately
+    if (nodeId) {
+      try {
+        const { saveCachedStats } = await import('../services/NodeStatsService');
+        await saveCachedStats({
+          node_id: nodeId,
+          served_requests: updatedStats.totalRequestsServed,
+          tokens_generated: updatedStats.totalTokensGenerated,
+          self_requests: updatedStats.totalSelfRequests,
+          session_uptime: Math.floor((Date.now() - updatedStats.sessionStartTime) / 1000),
+          peak_t_s: updatedStats.peakTokensPerSecond,
+          avg_t_s: 0,
+          low_t_s: updatedStats.lowestTokensPerSecond === Infinity ? 0 : updatedStats.lowestTokensPerSecond,
+          response_avg_time: updatedStats.totalRequestsServed > 0
+            ? Math.floor(updatedStats.totalProviderTimeMs / updatedStats.totalRequestsServed)
+            : 0,
+        });
+      } catch (error) {
+        console.error('[AppStore] Failed to cache provider stats:', error);
+      }
+    }
+  },
+
   setModelDownloaded: (v) => set({ modelDownloaded: v }),
   setModelDownloading: (v) => set({ modelDownloading: v }),
   setModelDownloadProgress: (v) => set({ modelDownloadProgress: v }),
@@ -548,8 +870,30 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastActivityTime: Date.now(),
       };
 
-      // Save stats asynchronously
-      setTimeout(() => get().saveNodeStats(), 0);
+      // Save stats to local cache asynchronously (for crash resilience)
+      setTimeout(async () => {
+        try {
+          const { saveCachedStats } = await import('../services/NodeStatsService');
+          const { nodeStats, nodeId } = get();
+          if (nodeId) {
+            await saveCachedStats({
+              node_id: nodeId,
+              served_requests: nodeStats.totalRequestsServed,
+              tokens_generated: nodeStats.totalTokensGenerated,
+              self_requests: nodeStats.totalSelfRequests,
+              session_uptime: Math.floor((Date.now() - nodeStats.sessionStartTime) / 1000),
+              peak_t_s: nodeStats.peakTokensPerSecond,
+              avg_t_s: 0,
+              low_t_s: nodeStats.lowestTokensPerSecond === Infinity ? 0 : nodeStats.lowestTokensPerSecond,
+              response_avg_time: nodeStats.totalRequestsServed > 0
+                ? Math.floor(nodeStats.totalProviderTimeMs / nodeStats.totalRequestsServed)
+                : 0,
+            });
+          }
+        } catch (error) {
+          console.error('[AppStore] Failed to cache stats:', error);
+        }
+      }, 0);
 
       return { messages, isGenerating: false, currentRequestId: null, nodeStats: updatedStats };
     }),
@@ -726,33 +1070,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   // Load node statistics
-  loadNodeStats: async () => {
-    try {
-      const statsJson = await AsyncStorage.getItem('nodeStats');
-      if (statsJson) {
-        const stats = JSON.parse(statsJson);
-        set({ nodeStats: { ...stats, sessionStartTime: Date.now() } });
-      }
-    } catch (e) {
-      console.error('[AppStore] Failed to load node stats:', e);
-    }
-  },
-
-  // Save node statistics
-  saveNodeStats: async () => {
-    try {
-      const { nodeStats } = get();
-      await AsyncStorage.setItem('nodeStats', JSON.stringify(nodeStats));
-    } catch (e) {
-      console.error('[AppStore] Failed to save node stats:', e);
-    }
-  },
-
   // Image Worker Actions
   setImageWorkerEnabled: async (v) => {
     set({ imageWorkerEnabled: v });
     try {
       await AsyncStorage.setItem('imageWorkerEnabled', v ? 'true' : 'false');
+
+      // Sync to backend
+      const nodeId = get().nodeId;
+      if (nodeId) {
+        await get().updateNodeSettings({ worker_mode_enabled: v });
+        console.log(`[AppStore] ☁️ Backend synced - worker_mode_enabled: ${v}`);
+      }
     } catch (e) {
       console.error('[AppStore] Failed to save worker enabled state:', e);
     }
