@@ -5,10 +5,10 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   Platform,
   Switch,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import DeviceInfo from 'react-native-device-info';
@@ -20,6 +20,7 @@ import {
 } from '../services/ModelDownloadManager';
 import { colors, fonts } from '../theme/colors';
 import { Accordion } from '../components/Accordion';
+import { CustomModal, ModalType } from '../components/CustomModal';
 import { VisionModelDownloader } from '../services/VisionModelDownloader';
 import { VISION_MODELS } from '../services/FaceRecognitionModels';
 import { VisionWorkerService } from '../services/VisionWorkerService';
@@ -77,6 +78,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
   const [downloadingVisionModels, setDownloadingVisionModels] = useState(false);
   const [visionModelsProgress, setVisionModelsProgress] = useState(0);
   const [visionModelsSize, setVisionModelsSize] = useState(0);
+  const [providerToggleLoading, setProviderToggleLoading] = useState(false);
+  const [workerToggleLoading, setWorkerToggleLoading] = useState(false);
+
+  // Modal state
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalType, setModalType] = useState<ModalType>('info');
+  const [modalTitle, setModalTitle] = useState('');
+  const [modalMessage, setModalMessage] = useState('');
+  const [modalButtons, setModalButtons] = useState<Array<{text: string; onPress: () => void; style?: 'primary' | 'secondary' | 'danger'}>>([]);
 
   // Refs for scrolling and highlighting
   const scrollViewRef = useRef<ScrollView>(null);
@@ -86,6 +96,20 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
 
   const modelManager = ModelDownloadManager.getInstance();
   const visionDownloader = VisionModelDownloader.getInstance();
+
+  // Helper function to show modal
+  const showModal = (
+    type: ModalType,
+    title: string,
+    message: string,
+    buttons?: Array<{text: string; onPress: () => void; style?: 'primary' | 'secondary' | 'danger'}>
+  ) => {
+    setModalType(type);
+    setModalTitle(title);
+    setModalMessage(message);
+    setModalButtons(buttons || [{ text: 'ok', onPress: () => setModalVisible(false), style: 'primary' }]);
+    setModalVisible(true);
+  };
 
   // Handle highlighting and scrolling when highlightModel is set
   useEffect(() => {
@@ -104,27 +128,27 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
             () => {}
           );
 
-          // Start pulsing animation
+          // Start floating light animation with glow effect
           Animated.loop(
             Animated.sequence([
               Animated.timing(highlightAnim, {
                 toValue: 1,
-                duration: 800,
+                duration: 1000,
                 useNativeDriver: false,
               }),
               Animated.timing(highlightAnim, {
                 toValue: 0,
-                duration: 800,
+                duration: 1000,
                 useNativeDriver: false,
               }),
             ])
           ).start();
 
-          // Stop animation after 4 seconds
+          // Stop animation after 6 seconds (longer to be more noticeable)
           setTimeout(() => {
             highlightAnim.stopAnimation();
             highlightAnim.setValue(0);
-          }, 4000);
+          }, 6000);
         }
       }, 500);
 
@@ -250,17 +274,19 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
   };
 
   const handleProviderModeToggle = async (value: boolean) => {
-    if (value) {
-      // Check if LLM model is downloaded
-      if (!modelDownloaded) {
-        Toast.show({
-          type: 'error',
-          text1: 'llm model required',
-          text2: 'please download the model first',
-          position: 'top',
-        });
-        return;
-      }
+    setProviderToggleLoading(true);
+    try {
+      if (value) {
+        // Check if LLM model is downloaded
+        if (!modelDownloaded) {
+          Toast.show({
+            type: 'error',
+            text1: 'llm model required',
+            text2: 'please download the model first',
+            position: 'top',
+          });
+          return;
+        }
 
       // Check battery level
       if (batteryLevel < batteryThreshold) {
@@ -329,29 +355,34 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
         }
       }
     } else {
-      // Disabling provider mode - unload the model
-      if (llamaEngine.isLoaded()) {
-        addLog('⏳ Unloading LLM model...');
-        await llamaEngine.unload();
-        setModelLoaded(false);
-        addLog('✅ LLM model unloaded');
+        // Disabling provider mode - unload the model
+        if (llamaEngine.isLoaded()) {
+          addLog('⏳ Unloading LLM model...');
+          await llamaEngine.unload();
+          setModelLoaded(false);
+          addLog('✅ LLM model unloaded');
+        }
       }
+      await setProviderModeEnabled(value);
+    } finally {
+      setProviderToggleLoading(false);
     }
-    await setProviderModeEnabled(value);
   };
 
   const handleWorkerModeToggle = async (value: boolean) => {
-    if (value) {
-      // Check if vision models are downloaded
-      if (!visionModelsDownloaded) {
-        Toast.show({
-          type: 'error',
-          text1: 'vision models required',
-          text2: 'please download vision models first',
-          position: 'top',
-        });
-        return;
-      }
+    setWorkerToggleLoading(true);
+    try {
+      if (value) {
+        // Check if vision models are downloaded
+        if (!visionModelsDownloaded) {
+          Toast.show({
+            type: 'error',
+            text1: 'vision models required',
+            text2: 'please download vision models first',
+            position: 'top',
+          });
+          return;
+        }
 
       // Check battery level
       if (batteryLevel < batteryThreshold) {
@@ -400,10 +431,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
         }
       }
     } else {
-      const workerService = VisionWorkerService.getInstance();
-      await workerService.stopWorkerMode();
+        const workerService = VisionWorkerService.getInstance();
+        await workerService.stopWorkerMode();
+      }
+      setImageWorkerEnabled(value);
+    } finally {
+      setWorkerToggleLoading(false);
     }
-    setImageWorkerEnabled(value);
   };
 
   const handleDownloadModel = async () => {
@@ -411,7 +445,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
 
     // Check if already downloaded
     if (modelDownloaded) {
-      Alert.alert('already downloaded', 'model is already on your device.');
+      showModal('info', 'already downloaded', 'model is already on your device.');
       return;
     }
 
@@ -419,9 +453,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
     const freeSpace = await modelManager.getAvailableSpace();
     const requiredSpace = 1000000000; // 1GB minimum
     if (freeSpace < requiredSpace) {
-      Alert.alert(
+      showModal(
+        'warning',
         'insufficient storage',
-        `need at least ${HardwareMonitor.formatBytes(requiredSpace)} free, but only ${HardwareMonitor.formatBytes(freeSpace)} available.`,
+        `need at least ${HardwareMonitor.formatBytes(requiredSpace)} free, but only ${HardwareMonitor.formatBytes(freeSpace)} available.`
       );
       return;
     }
@@ -440,10 +475,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
       setModelPath(path);
       await loadDownloadedModels();
 
-      Alert.alert('success', 'model downloaded successfully!');
+      showModal('success', 'success', 'model downloaded successfully!');
     } catch (error: any) {
       setModelDownloading(false);
-      Alert.alert('download failed', error.message || 'unknown error');
+      showModal('error', 'download failed', error.message || 'unknown error');
     }
   };
 
@@ -471,28 +506,30 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
       ? `and free up ${HardwareMonitor.formatBytes(fileSize)}`
       : '';
 
-    Alert.alert(
+    showModal(
+      'confirm',
       'delete model?',
       `this will delete ${model.name} ${sizeText}.`,
       [
-        { text: 'cancel', style: 'cancel' },
+        { text: 'cancel', onPress: () => setModalVisible(false), style: 'secondary' },
         {
           text: 'delete',
-          style: 'destructive',
+          style: 'danger',
           onPress: async () => {
+            setModalVisible(false);
             try {
               await modelManager.deleteModel(model);
               setModelDownloaded(false);
               setModelFilename(null);
               setModelPath(null);
               await loadDownloadedModels();
-              Alert.alert('deleted', 'model removed successfully.');
+              showModal('success', 'deleted', 'model removed successfully.');
             } catch (error: any) {
-              Alert.alert('error', error.message || 'failed to delete model');
+              showModal('error', 'error', error.message || 'failed to delete model');
             }
           },
         },
-      ],
+      ]
     );
   };
 
@@ -511,9 +548,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
     const freeSpace = await modelManager.getAvailableSpace();
     const requiredSpace = 100000000; // 100MB minimum
     if (freeSpace < requiredSpace) {
-      Alert.alert(
+      showModal(
+        'warning',
         'insufficient storage',
-        `need at least ${HardwareMonitor.formatBytes(requiredSpace)} free, but only ${HardwareMonitor.formatBytes(freeSpace)} available.`,
+        `need at least ${HardwareMonitor.formatBytes(requiredSpace)} free, but only ${HardwareMonitor.formatBytes(freeSpace)} available.`
       );
       return;
     }
@@ -560,26 +598,28 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
       ? `and free up ${HardwareMonitor.formatBytes(visionModelsSize)}`
       : '';
 
-    Alert.alert(
+    showModal(
+      'confirm',
       'delete vision models?',
       `this will delete all vision models ${sizeText}.`,
       [
-        { text: 'cancel', style: 'cancel' },
+        { text: 'cancel', onPress: () => setModalVisible(false), style: 'secondary' },
         {
           text: 'delete',
-          style: 'destructive',
+          style: 'danger',
           onPress: async () => {
+            setModalVisible(false);
             try {
               await visionDownloader.deleteAllModels();
               setVisionModelsDownloaded(false);
               await loadVisionModels();
-              Alert.alert('deleted', 'vision models removed successfully.');
+              showModal('success', 'deleted', 'vision models removed successfully.');
             } catch (error: any) {
-              Alert.alert('error', error.message || 'failed to delete models');
+              showModal('error', 'error', error.message || 'failed to delete models');
             }
           },
         },
-      ],
+      ]
     );
   };
 
@@ -668,17 +708,27 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
                   style={{
                     borderWidth: highlightModel === 'llm' ? highlightAnim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [2, 4]
+                      outputRange: [3, 5]
                     }) : 2,
                     borderColor: highlightModel === 'llm' ? highlightAnim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: ['rgba(39, 201, 63, 0.6)', 'rgba(39, 201, 63, 1)']
+                      outputRange: ['rgba(39, 201, 63, 0.5)', 'rgba(39, 201, 63, 1)']
                     }) as any : colors.terminal.green,
                     borderRadius: 6,
                     shadowColor: highlightModel === 'llm' ? '#27c93f' : 'transparent',
-                    shadowOpacity: highlightModel === 'llm' ? highlightAnim : 0,
-                    shadowRadius: 12,
-                    elevation: highlightModel === 'llm' ? 8 : 0,
+                    shadowOpacity: highlightModel === 'llm' ? highlightAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.6, 1]
+                    }) as any : 0,
+                    shadowRadius: highlightModel === 'llm' ? highlightAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [10, 20]
+                    }) as any : 0,
+                    elevation: highlightModel === 'llm' ? 12 : 0,
+                    backgroundColor: highlightModel === 'llm' ? highlightAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['rgba(39, 201, 63, 0.05)', 'rgba(39, 201, 63, 0.15)']
+                    }) as any : 'transparent',
                   }}
                 >
                   <TouchableOpacity
@@ -758,17 +808,27 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
                   style={{
                     borderWidth: highlightModel === 'vision' ? highlightAnim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [2, 4]
+                      outputRange: [3, 5]
                     }) : 2,
                     borderColor: highlightModel === 'vision' ? highlightAnim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: ['rgba(39, 201, 63, 0.6)', 'rgba(39, 201, 63, 1)']
+                      outputRange: ['rgba(39, 201, 63, 0.5)', 'rgba(39, 201, 63, 1)']
                     }) as any : colors.terminal.green,
                     borderRadius: 6,
                     shadowColor: highlightModel === 'vision' ? '#27c93f' : 'transparent',
-                    shadowOpacity: highlightModel === 'vision' ? highlightAnim : 0,
-                    shadowRadius: 12,
-                    elevation: highlightModel === 'vision' ? 8 : 0,
+                    shadowOpacity: highlightModel === 'vision' ? highlightAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.6, 1]
+                    }) as any : 0,
+                    shadowRadius: highlightModel === 'vision' ? highlightAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [10, 20]
+                    }) as any : 0,
+                    elevation: highlightModel === 'vision' ? 12 : 0,
+                    backgroundColor: highlightModel === 'vision' ? highlightAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['rgba(39, 201, 63, 0.05)', 'rgba(39, 201, 63, 0.15)']
+                    }) as any : 'transparent',
                   }}
                 >
                   <TouchableOpacity
@@ -801,12 +861,16 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
               <View style={styles.styledBox}>
                 <View style={styles.switchRow}>
                   <Text style={styles.styledBoxValue}>{providerModeEnabled ? 'enabled' : 'disabled'}</Text>
-                  <Switch
-                    value={providerModeEnabled}
-                    onValueChange={handleProviderModeToggle}
-                    trackColor={{ false: colors.input.border, true: colors.terminal.green }}
-                    thumbColor={colors.terminal.prompt}
-                  />
+                  {providerToggleLoading ? (
+                    <ActivityIndicator size="small" color={colors.terminal.green} />
+                  ) : (
+                    <Switch
+                      value={providerModeEnabled}
+                      onValueChange={handleProviderModeToggle}
+                      trackColor={{ false: colors.input.border, true: colors.terminal.green }}
+                      thumbColor={colors.terminal.prompt}
+                    />
+                  )}
                 </View>
               </View>
             </View>
@@ -818,124 +882,17 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
               <View style={styles.styledBox}>
                 <View style={styles.switchRow}>
                   <Text style={styles.styledBoxValue}>{imageWorkerEnabled ? 'enabled' : 'disabled'}</Text>
-                  <Switch
-                    value={imageWorkerEnabled}
-                    onValueChange={handleWorkerModeToggle}
-                    trackColor={{ false: colors.input.border, true: colors.terminal.green }}
-                    thumbColor={colors.terminal.prompt}
-                  />
+                  {workerToggleLoading ? (
+                    <ActivityIndicator size="small" color={colors.terminal.green} />
+                  ) : (
+                    <Switch
+                      value={imageWorkerEnabled}
+                      onValueChange={handleWorkerModeToggle}
+                      trackColor={{ false: colors.input.border, true: colors.terminal.green }}
+                      thumbColor={colors.terminal.prompt}
+                    />
+                  )}
                 </View>
-              </View>
-            </View>
-
-            {/* Worker Statistics - always show */}
-            <View style={styles.sectionDivider}>
-              <Text style={styles.sectionDividerText}>worker statistics</Text>
-            </View>
-
-                <View style={styles.statsRow}>
-                  <View style={styles.statBoxContainer}>
-                    <View style={styles.statBoxLabel}>
-                      <Text style={styles.statBoxLabelText}>processed</Text>
-                    </View>
-                    <View style={styles.statBox}>
-                      <Text style={styles.statBoxValue}>{workerModeStats.tasksProcessed}</Text>
-                      <Text style={styles.statBoxUnit}>tasks</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.statBoxContainer}>
-                    <View style={styles.statBoxLabel}>
-                      <Text style={styles.statBoxLabelText}>detections</Text>
-                    </View>
-                    <View style={styles.statBox}>
-                      <Text style={styles.statBoxValue}>{workerModeStats.totalDetections}</Text>
-                      <Text style={styles.statBoxUnit}>found</Text>
-                    </View>
-                  </View>
-                </View>
-
-                <View style={styles.statsRow}>
-                  <View style={styles.statBoxContainer}>
-                    <View style={styles.statBoxLabel}>
-                      <Text style={styles.statBoxLabelText}>failed</Text>
-                    </View>
-                    <View style={styles.statBox}>
-                      <Text style={styles.statBoxValue}>{workerModeStats.tasksFailed}</Text>
-                      <Text style={styles.statBoxUnit}>tasks</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.statBoxContainer}>
-                    <View style={styles.statBoxLabel}>
-                      <Text style={styles.statBoxLabelText}>avg time</Text>
-                    </View>
-                    <View style={styles.statBox}>
-                      <Text style={styles.statBoxValue}>
-                        {workerModeStats.avgProcessingTimeMs > 0
-                          ? (workerModeStats.avgProcessingTimeMs / 1000).toFixed(1)
-                          : '0.0'}
-                      </Text>
-                      <Text style={styles.statBoxUnit}>seconds</Text>
-                    </View>
-                  </View>
-                </View>
-
-            {/* Device Health Section - always show */}
-            <View style={styles.sectionDivider}>
-              <Text style={styles.sectionDividerText}>device health</Text>
-            </View>
-
-                <View style={styles.styledBoxContainer}>
-                  <View style={styles.styledBoxLabel}>
-                    <Text style={styles.styledBoxLabelText}>thermal status</Text>
-                  </View>
-                  <View style={styles.styledBox}>
-                    <Text style={[
-                      styles.styledBoxValue,
-                      { color: getThermalColor(thermalStatus) }
-                    ]}>
-                      {thermalStatus}
-                    </Text>
-                    <Text style={styles.styledBoxSubtext}>
-                      {thermalStatus === 'nominal' || thermalStatus === 'light'
-                        ? 'device temperature normal'
-                        : 'device may throttle performance'}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.styledBoxContainer}>
-                  <View style={styles.styledBoxLabel}>
-                    <Text style={styles.styledBoxLabelText}>network</Text>
-                  </View>
-                  <View style={styles.styledBox}>
-                    <Text style={[
-                      styles.styledBoxValue,
-                      { color: connected ? colors.status.success : colors.status.error }
-                    ]}>
-                      {connected ? 'connected' : 'disconnected'}
-                    </Text>
-                    <Text style={styles.styledBoxSubtext}>
-                      {connected ? 'relay server reachable' : 'cannot reach coordinator'}
-                    </Text>
-                  </View>
-                </View>
-
-            <View style={styles.styledBoxContainer}>
-              <View style={styles.styledBoxLabel}>
-                <Text style={styles.styledBoxLabelText}>battery</Text>
-              </View>
-              <View style={styles.styledBox}>
-                <Text style={[
-                  styles.styledBoxValue,
-                  { color: batteryLevel < batteryThreshold ? colors.status.warning : colors.terminal.green }
-                ]}>
-                  {batteryLevel}%
-                </Text>
-                <Text style={styles.styledBoxSubtext}>
-                  min threshold: {batteryThreshold}%
-                </Text>
               </View>
             </View>
 
@@ -967,6 +924,117 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
           </View>
         </Accordion>
 
+        {/* Worker Statistics */}
+        <Accordion title="worker statistics" icon="package" defaultExpanded={false}>
+          <View style={styles.accordionContent}>
+            <View style={styles.statsRow}>
+              <View style={styles.statBoxContainer}>
+                <View style={styles.statBoxLabel}>
+                  <Text style={styles.statBoxLabelText}>processed</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={styles.statBoxValue}>{workerModeStats.tasksProcessed}</Text>
+                  <Text style={styles.statBoxUnit}>tasks</Text>
+                </View>
+              </View>
+
+              <View style={styles.statBoxContainer}>
+                <View style={styles.statBoxLabel}>
+                  <Text style={styles.statBoxLabelText}>detections</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={styles.statBoxValue}>{workerModeStats.totalDetections}</Text>
+                  <Text style={styles.statBoxUnit}>found</Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.statsRow}>
+              <View style={styles.statBoxContainer}>
+                <View style={styles.statBoxLabel}>
+                  <Text style={styles.statBoxLabelText}>failed</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={styles.statBoxValue}>{workerModeStats.tasksFailed}</Text>
+                  <Text style={styles.statBoxUnit}>tasks</Text>
+                </View>
+              </View>
+
+              <View style={styles.statBoxContainer}>
+                <View style={styles.statBoxLabel}>
+                  <Text style={styles.statBoxLabelText}>avg time</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={styles.statBoxValue}>
+                    {workerModeStats.avgProcessingTimeMs > 0
+                      ? (workerModeStats.avgProcessingTimeMs / 1000).toFixed(1)
+                      : '0.0'}
+                  </Text>
+                  <Text style={styles.statBoxUnit}>seconds</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Accordion>
+
+        {/* Device Health */}
+        <Accordion title="device health" icon="activity" defaultExpanded={false}>
+          <View style={styles.accordionContent}>
+            <View style={styles.styledBoxContainer}>
+              <View style={styles.styledBoxLabel}>
+                <Text style={styles.styledBoxLabelText}>thermal status</Text>
+              </View>
+              <View style={styles.styledBox}>
+                <Text style={[
+                  styles.styledBoxValue,
+                  { color: getThermalColor(thermalStatus) }
+                ]}>
+                  {thermalStatus}
+                </Text>
+                <Text style={styles.styledBoxSubtext}>
+                  {thermalStatus === 'nominal' || thermalStatus === 'light'
+                    ? 'device temperature normal'
+                    : 'device may throttle performance'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.styledBoxContainer}>
+              <View style={styles.styledBoxLabel}>
+                <Text style={styles.styledBoxLabelText}>network</Text>
+              </View>
+              <View style={styles.styledBox}>
+                <Text style={[
+                  styles.styledBoxValue,
+                  { color: connected ? colors.status.success : colors.status.error }
+                ]}>
+                  {connected ? 'connected' : 'disconnected'}
+                </Text>
+                <Text style={styles.styledBoxSubtext}>
+                  {connected ? 'relay server reachable' : 'cannot reach coordinator'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.styledBoxContainer}>
+              <View style={styles.styledBoxLabel}>
+                <Text style={styles.styledBoxLabelText}>battery</Text>
+              </View>
+              <View style={styles.styledBox}>
+                <Text style={[
+                  styles.styledBoxValue,
+                  { color: batteryLevel < batteryThreshold ? colors.status.warning : colors.terminal.green }
+                ]}>
+                  {batteryLevel}%
+                </Text>
+                <Text style={styles.styledBoxSubtext}>
+                  min threshold: {batteryThreshold}%
+                </Text>
+              </View>
+            </View>
+          </View>
+        </Accordion>
+
         {/* Profile Section */}
         <Accordion title="profile" icon="user" defaultExpanded={false}>
           <View style={styles.accordionContent}>
@@ -990,8 +1058,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
           </View>
         </Accordion>
 
-        {/* node statistics */}
-        <Accordion title="node statistics" icon="bar-chart-2" defaultExpanded={false}>
+        {/* provider statistics */}
+        <Accordion title="provider statistics" icon="bar-chart-2" defaultExpanded={false}>
           <View style={styles.accordionContent}>
             {/* Row 1: Requests & Tokens */}
             <View style={styles.statsRow}>
@@ -1201,6 +1269,16 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
           </View>
         </Accordion>
       </ScrollView>
+
+      {/* Custom Modal */}
+      <CustomModal
+        visible={modalVisible}
+        type={modalType}
+        title={modalTitle}
+        message={modalMessage}
+        buttons={modalButtons}
+        onClose={() => setModalVisible(false)}
+      />
     </View>
   );
 };

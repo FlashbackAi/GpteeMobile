@@ -1,5 +1,7 @@
-import BackgroundService from 'react-native-background-actions';
+import { NativeModules, Platform } from 'react-native';
 import { useAppStore } from '../store/appStore';
+
+const { ForegroundServiceModule } = NativeModules;
 
 export interface ServiceStats {
   mode: 'provider' | 'worker' | 'both';
@@ -12,30 +14,31 @@ export interface ServiceStats {
 
 let updateInterval: NodeJS.Timeout | null = null;
 let startTime: number = 0;
-
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+let isRunning = false;
 
 /**
- * Background task that keeps the service alive and updates notification
+ * Format uptime in human-readable format
  */
-const backgroundTask = async (taskData: any) => {
-  const { delay } = taskData;
+const formatUptime = (seconds: number): string => {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
 
-  await new Promise(async () => {
-    while (BackgroundService.isRunning()) {
-      // Update notification with current stats
-      await updateNotification();
-
-      // Wait before next update
-      await sleep(delay);
-    }
-  });
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${secs}s`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${secs}s`;
+  } else {
+    return `${secs}s`;
+  }
 };
 
 /**
  * Update notification with real-time stats
  */
 const updateNotification = async () => {
+  if (!isRunning || Platform.OS !== 'android') return;
+
   try {
     const state = useAppStore.getState();
     const { providerModeEnabled, imageWorkerEnabled, providerModeStats, workerModeStats } = state;
@@ -67,38 +70,14 @@ const updateNotification = async () => {
     }
 
     // Update notification
-    await BackgroundService.updateNotification({
-      taskTitle,
-      taskDesc,
-      taskIcon: {
-        name: 'ic_launcher',
-        type: 'mipmap',
-      },
-      progressBar: {
-        max: 100,
-        value: 0,
-        indeterminate: false,
-      },
-    });
+    if (ForegroundServiceModule) {
+      await ForegroundServiceModule.updateNotification({
+        taskTitle,
+        taskDesc,
+      });
+    }
   } catch (error) {
     console.error('[ForegroundService] Failed to update notification:', error);
-  }
-};
-
-/**
- * Format uptime in human-readable format
- */
-const formatUptime = (seconds: number): string => {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m ${secs}s`;
-  } else if (minutes > 0) {
-    return `${minutes}m ${secs}s`;
-  } else {
-    return `${secs}s`;
   }
 };
 
@@ -106,10 +85,19 @@ const formatUptime = (seconds: number): string => {
  * Start foreground service
  */
 export const startForegroundService = async (): Promise<void> => {
+  if (Platform.OS !== 'android') {
+    console.log('[ForegroundService] Service only available on Android');
+    return;
+  }
+
   try {
-    if (BackgroundService.isRunning()) {
+    if (isRunning) {
       console.log('[ForegroundService] Service already running');
       return;
+    }
+
+    if (!ForegroundServiceModule) {
+      throw new Error('ForegroundServiceModule not available');
     }
 
     startTime = Date.now();
@@ -120,27 +108,23 @@ export const startForegroundService = async (): Promise<void> => {
     const mode = (providerModeEnabled && imageWorkerEnabled) ? 'both' :
                   providerModeEnabled ? 'provider' : 'worker';
 
-    const options = {
-      taskName: 'GPTee Background Service',
-      taskTitle: `GPTee: ${mode === 'both' ? 'Provider + Worker' : mode === 'provider' ? 'Provider' : 'Worker'} Active`,
-      taskDesc: 'Starting...',
-      taskIcon: {
-        name: 'ic_launcher',
-        type: 'mipmap',
-      },
-      color: '#27c93f',
-      linkingURI: 'gptee://',
-      parameters: {
-        delay: 2000, // Update notification every 2 seconds
-      },
-      progressBar: {
-        max: 100,
-        value: 0,
-        indeterminate: false,
-      },
-    };
+    const taskTitle = `GPTee: ${mode === 'both' ? 'Provider + Worker' : mode === 'provider' ? 'Provider' : 'Worker'} Active`;
+    const taskDesc = 'Starting...';
 
-    await BackgroundService.start(backgroundTask, options);
+    await ForegroundServiceModule.startService({
+      taskTitle,
+      taskDesc,
+      mode,
+    });
+
+    isRunning = true;
+
+    // Start periodic notification updates (every 2 seconds)
+    if (updateInterval) {
+      clearInterval(updateInterval);
+    }
+    updateInterval = setInterval(updateNotification, 2000);
+
     console.log('[ForegroundService] ✅ Service started successfully');
   } catch (error) {
     console.error('[ForegroundService] ❌ Failed to start service:', error);
@@ -152,13 +136,23 @@ export const startForegroundService = async (): Promise<void> => {
  * Stop foreground service
  */
 export const stopForegroundService = async (): Promise<void> => {
+  if (Platform.OS !== 'android') {
+    return;
+  }
+
   try {
-    if (!BackgroundService.isRunning()) {
+    if (!isRunning) {
       console.log('[ForegroundService] Service not running');
       return;
     }
 
-    await BackgroundService.stop();
+    if (!ForegroundServiceModule) {
+      throw new Error('ForegroundServiceModule not available');
+    }
+
+    await ForegroundServiceModule.stopService();
+
+    isRunning = false;
 
     if (updateInterval) {
       clearInterval(updateInterval);
@@ -176,14 +170,12 @@ export const stopForegroundService = async (): Promise<void> => {
  * Check if service is running
  */
 export const isServiceRunning = (): boolean => {
-  return BackgroundService.isRunning();
+  return isRunning;
 };
 
 /**
  * Force update notification immediately
  */
 export const updateServiceNotification = async (): Promise<void> => {
-  if (BackgroundService.isRunning()) {
-    await updateNotification();
-  }
+  await updateNotification();
 };

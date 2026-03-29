@@ -13,22 +13,23 @@
  * Base server hostname/IP
  * Change this value for different environments:
  * - Development: 'localhost' or local network IP (e.g., '192.168.0.66')
- * - Production: Your deployed server IP or domain (e.g., 'relay.gptee.org')
+ * - Production: Your deployed server IP or domain (e.g., 'api.gptee.ai')
  */
-const SERVER_HOST = '192.168.0.66';
-const SERVER_PORT = 9293;
+const SERVER_HOST = 'api.gptee.ai';
 
 /**
  * Relay Server WebSocket URL
  * This is the main relay server for P2P communication and provider discovery.
+ * Uses secure WebSocket (wss) via ALB/HTTPS
  */
-export const RELAY_SERVER_URL = `ws://${SERVER_HOST}:${SERVER_PORT}`;
+export const RELAY_SERVER_URL = `wss://${SERVER_HOST}`;
 
 /**
  * Backend API Base URL
  * This is the HTTP REST API endpoint for authentication and data sync.
+ * Uses HTTPS via ALB (port 443 - standard HTTPS port, handled by ALB)
  */
-export const API_BASE_URL = `http://${SERVER_HOST}:${SERVER_PORT}/api`;
+export const API_BASE_URL = `https://${SERVER_HOST}/api`;
 
 /**
  * Image Worker Coordinator WebSocket URL
@@ -37,7 +38,7 @@ export const API_BASE_URL = `http://${SERVER_HOST}:${SERVER_PORT}/api`;
  * For now, this points to the same relay server but could be separate
  * in a production deployment.
  */
-export const COORDINATOR_URL = `ws://${SERVER_HOST}:${SERVER_PORT}`;
+export const COORDINATOR_URL = `wss://${SERVER_HOST}`;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Worker Configuration
@@ -78,7 +79,7 @@ export const FEATURES = {
   /**
    * Enable debug logging
    */
-  debugLogging: process.env.NODE_ENV === 'development',
+  debugLogging: process.env.NODE_ENV === 'production',
 
   /**
    * Enable thermal monitoring

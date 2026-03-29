@@ -37,6 +37,9 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [showFloatingDownload, setShowFloatingDownload] = useState(false);
   const [floatingDownloadMode, setFloatingDownloadMode] = useState<'provider' | 'worker'>('provider');
+  const [acceptingToggleLoading, setAcceptingToggleLoading] = useState(false);
+  const [localToggleLoading, setLocalToggleLoading] = useState(false);
+  const [providerToggleLoading, setProviderToggleLoading] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const slideAnim = useRef(new Animated.Value(0)).current;
   const [liveMetrics, setLiveMetrics] = useState<{
@@ -253,6 +256,26 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
     }
   }, [providerModeEnabled]);
 
+  // Auto-load model if local mode is enabled but model isn't loaded
+  useEffect(() => {
+    const autoLoadModel = async () => {
+      if (useLocalModel && !providerModeEnabled && modelDownloaded && modelPath && !modelLoaded && !llamaEngine.isLoading()) {
+        addLog('⏳ Auto-loading LLM model for local mode...');
+        setModelLoading(true);
+        try {
+          await llamaEngine.loadModel(modelPath);
+          setModelLoaded(true);
+          setModelLoading(false);
+          addLog('✅ LLM model loaded successfully');
+        } catch (error: any) {
+          setModelLoading(false);
+          addLog(`❌ LLM model load failed: ${error.message}`);
+        }
+      }
+    };
+    autoLoadModel();
+  }, [useLocalModel, providerModeEnabled, modelDownloaded, modelPath, modelLoaded]);
+
   // Registration updates are handled globally in App.tsx
   // No need to send updates here to avoid race conditions
 
@@ -265,29 +288,91 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
     };
   }, [accepting]);
 
-  const toggleLocalMode = (enabled: boolean) => {
+  const toggleLocalMode = async (enabled: boolean) => {
     // Local Mode can only be toggled when Provider Mode is OFF
     if (providerModeEnabled) return;
 
-    setUseLocalModel(enabled);
-    if (enabled) {
+    setLocalToggleLoading(true);
+    try {
+      if (enabled) {
+      // Check if model is downloaded
+      if (!modelDownloaded) {
+        Toast.show({
+          type: 'error',
+          text1: 'model not downloaded',
+          text2: 'please download the model first',
+          position: 'top',
+        });
+        return;
+      }
+
+      // Load model if not already loaded
+      if (modelDownloaded && modelPath && !llamaEngine.isLoaded() && !llamaEngine.isLoading()) {
+        Toast.show({
+          type: 'info',
+          text1: 'loading model...',
+          text2: 'this may take a moment',
+          position: 'top',
+        });
+
+        addLog('⏳ Loading LLM model for local mode...');
+        setModelLoading(true);
+        try {
+          await llamaEngine.loadModel(modelPath);
+          setModelLoaded(true);
+          setModelLoading(false);
+          addLog('✅ LLM model loaded successfully');
+          Toast.show({
+            type: 'success',
+            text1: 'model loaded',
+            text2: 'you can now chat locally',
+            position: 'top',
+          });
+        } catch (error: any) {
+          setModelLoading(false);
+          addLog(`❌ LLM model load failed: ${error.message}`);
+          Toast.show({
+            type: 'error',
+            text1: 'model load failed',
+            text2: error.message,
+            position: 'top',
+          });
+          return;
+        }
+      }
+
+      setUseLocalModel(true);
       // State 3: Local User (uses own compute, doesn't serve)
       addLog('🔵 Local Mode ON (State 3: Local User - own compute only)');
     } else {
-      // State 2: Consumer (requests from providers)
-      addLog('🟣 Local Mode OFF (State 2: Consumer - requesting from providers)');
+      // Unload model when disabling local mode (if provider mode is also off)
+      if (!providerModeEnabled && llamaEngine.isLoaded()) {
+        addLog('⏳ Unloading LLM model...');
+        await llamaEngine.unload();
+        setModelLoaded(false);
+        addLog('✅ LLM model unloaded');
+      }
+
+        setUseLocalModel(false);
+        // State 2: Consumer (requests from providers)
+        addLog('🟣 Local Mode OFF (State 2: Consumer - requesting from providers)');
+      }
+    } finally {
+      setLocalToggleLoading(false);
     }
   };
 
   const toggleProviderMode = async (enabled: boolean) => {
-    if (enabled) {
-      // Check if model is downloaded
-      if (!modelDownloaded) {
-        // Show floating download button instead of toast
-        setFloatingDownloadMode('provider');
-        setShowFloatingDownload(true);
-        return;
-      }
+    setProviderToggleLoading(true);
+    try {
+      if (enabled) {
+        // Check if model is downloaded
+        if (!modelDownloaded) {
+          // Show floating download button instead of toast
+          setFloatingDownloadMode('provider');
+          setShowFloatingDownload(true);
+          return;
+        }
 
       // Check battery level before enabling
       try {
@@ -370,9 +455,12 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
       // Will become State 2 (Consumer) if Local Mode OFF, or State 3 (Local User) if Local Mode ON
       const newState = useLocalModel ? 'State 3: Local User' : 'State 2: Consumer';
       addLog(`⚫ Provider mode disabled → ${newState}`);
-      setAccepting(false);
-      ProviderService.stop();
-      addLog('🔴 Stopped accepting jobs (no longer available)');
+        setAccepting(false);
+        ProviderService.stop();
+        addLog('🔴 Stopped accepting jobs (no longer available)');
+      }
+    } finally {
+      setProviderToggleLoading(false);
     }
   };
 
@@ -392,9 +480,14 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
   }, [providerModeEnabled, modelLoaded]);
 
   const toggleAccepting = async (val: boolean) => {
-    // Use toggleProviderMode to handle model loading/unloading
-    await toggleProviderMode(val);
-    setAccepting(val);
+    setAcceptingToggleLoading(true);
+    try {
+      // Use toggleProviderMode to handle model loading/unloading
+      await toggleProviderMode(val);
+      setAccepting(val);
+    } finally {
+      setAcceptingToggleLoading(false);
+    }
   };
 
   // ── Stop generation ────────────────────────────────────────────────────────
@@ -688,13 +781,17 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
       <View style={styles.providerContent}>
         <View style={styles.providerRow}>
           <Text style={styles.providerLabel}>Accept Jobs</Text>
-          <Switch
-            value={accepting}
-            onValueChange={toggleAccepting}
-            trackColor={{ false: colors.input.border, true: colors.accent.primary }}
-            thumbColor={accepting ? colors.button.primaryText : colors.text.tertiary}
-            disabled={!modelLoaded}
-          />
+          {acceptingToggleLoading ? (
+            <ActivityIndicator size="small" color={colors.accent.primary} />
+          ) : (
+            <Switch
+              value={accepting}
+              onValueChange={toggleAccepting}
+              trackColor={{ false: colors.input.border, true: colors.accent.primary }}
+              thumbColor={accepting ? colors.button.primaryText : colors.text.tertiary}
+              disabled={!modelLoaded}
+            />
+          )}
         </View>
 
         <View style={styles.providerRow}>
@@ -818,14 +915,18 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
           <View style={styles.headerRight}>
             <View style={styles.localToggleContainer}>
               <Text style={styles.toggleLabel}>local</Text>
-              <Switch
-                value={useLocalModel}
-                onValueChange={toggleLocalMode}
-                trackColor={{ false: colors.input.border, true: colors.accent.primary }}
-                thumbColor={useLocalModel ? colors.button.secondaryText : colors.text.tertiary}
-                disabled={providerModeEnabled}
-                style={styles.localToggleSwitch}
-              />
+              {localToggleLoading ? (
+                <ActivityIndicator size="small" color={colors.accent.primary} style={styles.localToggleSwitch} />
+              ) : (
+                <Switch
+                  value={useLocalModel}
+                  onValueChange={toggleLocalMode}
+                  trackColor={{ false: colors.input.border, true: colors.accent.primary }}
+                  thumbColor={useLocalModel ? colors.button.secondaryText : colors.text.tertiary}
+                  disabled={providerModeEnabled}
+                  style={styles.localToggleSwitch}
+                />
+              )}
             </View>
 
             <View style={styles.nodeChipContainer}>
@@ -838,14 +939,18 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
                 <Text style={styles.nodeChipText}>node</Text>
                 <Icon name="terminal" size={12} color={colors.text.primary} />
               </TouchableOpacity>
-              <Switch
-                value={providerModeEnabled}
-                onValueChange={toggleProviderMode}
-                trackColor={{ false: colors.input.border, true: colors.accent.primary }}
-                thumbColor={providerModeEnabled ? colors.button.secondaryText : colors.text.tertiary}
-                disabled={!modelDownloaded}
-                style={styles.nodeToggle}
-              />
+              {providerToggleLoading ? (
+                <ActivityIndicator size="small" color={colors.accent.primary} style={styles.nodeToggle} />
+              ) : (
+                <Switch
+                  value={providerModeEnabled}
+                  onValueChange={toggleProviderMode}
+                  trackColor={{ false: colors.input.border, true: colors.accent.primary }}
+                  thumbColor={providerModeEnabled ? colors.button.secondaryText : colors.text.tertiary}
+                  disabled={!modelDownloaded}
+                  style={styles.nodeToggle}
+                />
+              )}
             </View>
 
             <TouchableOpacity

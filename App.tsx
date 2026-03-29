@@ -10,6 +10,7 @@ import ChatScreen from './src/screens/ChatScreen';
 import ChatHistoryScreen from './src/screens/ChatHistoryScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import AuthScreen from './src/screens/AuthScreen';
+import SplashScreen from './src/screens/SplashScreen';
 import { FaceRecognitionTestScreen } from './src/screens/FaceRecognitionTestScreen';
 import { ImageWorkerScreen } from './src/screens/ImageWorkerScreen';
 import { ChatMessage } from './src/network/PeerProtocol';
@@ -408,6 +409,11 @@ export default function App() {
   };
 
   // ── Routing ───────────────────────────────────────────────────────────────
+  // Show splash screen while loading data
+  if (!dataLoaded) {
+    return <SplashScreen />;
+  }
+
   // Show auth screen if not authenticated
   if (!isAuthenticated) {
     return <AuthScreen onAuthSuccess={handleAuthSuccess} />;

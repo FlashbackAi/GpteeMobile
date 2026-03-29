@@ -43,19 +43,46 @@ AppRegistry.registerHeadlessTask('SolanaMobileWalletAdapterSessionBackgroundTask
 // Import Mobile Wallet Adapter after registering headless task
 import '@solana-mobile/mobile-wallet-adapter-protocol';
 
-// Suppress the AppRegistry.startHeadlessTask error from MWA in New Architecture
-// This error doesn't actually prevent the wallet flow from working
+// Suppress known headless task errors that don't affect functionality
+// These errors occur during hot reload but don't prevent the app from working
 const originalConsoleError = console.error;
+const originalConsoleWarn = console.warn;
+
 console.error = (...args) => {
-  // Filter out the specific MWA headless task error
   const errorString = args.join(' ');
-  if (errorString.includes('AppRegistry.startHeadlessTask') &&
-      errorString.includes('Module has not been registered as callable')) {
-    // Suppress this specific error - it's a known issue with MWA + New Architecture
+
+  // Filter out known non-critical errors
+  if (
+    // MWA headless task error
+    (errorString.includes('AppRegistry.startHeadlessTask') &&
+     errorString.includes('Module has not been registered as callable')) ||
+    // Microtask error during hot reload
+    errorString.includes('Could not enqueue microtask because they are disabled') ||
+    // Background actions headless task registration warning
+    errorString.includes('registerHeadlessTask') ||
+    errorString.includes('registerCancellableHeadlessTask')
+  ) {
+    // Suppress these specific errors - they're hot reload artifacts
     return;
   }
+
   // Log all other errors normally
   originalConsoleError(...args);
+};
+
+console.warn = (...args) => {
+  const warnString = args.join(' ');
+
+  // Filter out headless task warnings
+  if (
+    warnString.includes('registerHeadlessTask') ||
+    warnString.includes('registerCancellableHeadlessTask')
+  ) {
+    return;
+  }
+
+  // Log all other warnings normally
+  originalConsoleWarn(...args);
 };
 
 AppRegistry.registerComponent(appName, () => App);

@@ -28,6 +28,12 @@ class MainApplication : Application(), ReactApplication {
           // Add thermal manager package
           packages.add(ThermalManagerPackage())
 
+          // Add battery optimization package
+          packages.add(BatteryOptimizationPackage())
+
+          // Add foreground service package
+          packages.add(ForegroundServicePackage())
+
           return packages
         }
 

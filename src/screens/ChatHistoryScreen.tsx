@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, TouchableOpacity, FlatList,
-  StyleSheet, SafeAreaView, Alert,
+  StyleSheet, SafeAreaView,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, fonts } from '../theme/colors';
 import { ChatMessage } from '../network/PeerProtocol';
+import { CustomModal, ModalType } from '../components/CustomModal';
 
 interface ChatSession {
   id: string;
@@ -27,6 +28,27 @@ export default function ChatHistoryScreen({ onBack, onSelectChat, currentMessage
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Modal state
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalType, setModalType] = useState<ModalType>('info');
+  const [modalTitle, setModalTitle] = useState('');
+  const [modalMessage, setModalMessage] = useState('');
+  const [modalButtons, setModalButtons] = useState<Array<{text: string; onPress: () => void; style?: 'primary' | 'secondary' | 'danger'}>>([]);
+
+  // Helper function to show modal
+  const showModal = (
+    type: ModalType,
+    title: string,
+    message: string,
+    buttons?: Array<{text: string; onPress: () => void; style?: 'primary' | 'secondary' | 'danger'}>
+  ) => {
+    setModalType(type);
+    setModalTitle(title);
+    setModalMessage(message);
+    setModalButtons(buttons || [{ text: 'ok', onPress: () => setModalVisible(false), style: 'primary' }]);
+    setModalVisible(true);
+  };
+
   useEffect(() => {
     loadChatHistory();
   }, []);
@@ -47,7 +69,7 @@ export default function ChatHistoryScreen({ onBack, onSelectChat, currentMessage
 
   const saveCurrentChat = async () => {
     if (currentMessages.length === 0) {
-      Alert.alert('Empty Chat', 'No messages to save');
+      showModal('info', 'Empty Chat', 'No messages to save');
       return;
     }
 
@@ -68,29 +90,31 @@ export default function ChatHistoryScreen({ onBack, onSelectChat, currentMessage
       const updated = [newSession, ...sessions];
       await AsyncStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(updated));
       setSessions(updated);
-      Alert.alert('Saved', 'Chat saved successfully');
+      showModal('success', 'Saved', 'Chat saved successfully');
     } catch (error) {
-      Alert.alert('Error', 'Failed to save chat');
+      showModal('error', 'Error', 'Failed to save chat');
       console.error('Failed to save chat:', error);
     }
   };
 
   const deleteChat = async (id: string) => {
-    Alert.alert(
+    showModal(
+      'confirm',
       'Delete Chat',
       'Are you sure you want to delete this chat?',
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'cancel', onPress: () => setModalVisible(false), style: 'secondary' },
         {
-          text: 'Delete',
-          style: 'destructive',
+          text: 'delete',
+          style: 'danger',
           onPress: async () => {
+            setModalVisible(false);
             try {
               const updated = sessions.filter(s => s.id !== id);
               await AsyncStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(updated));
               setSessions(updated);
             } catch (error) {
-              Alert.alert('Error', 'Failed to delete chat');
+              showModal('error', 'Error', 'Failed to delete chat');
               console.error('Failed to delete chat:', error);
             }
           },
@@ -100,20 +124,22 @@ export default function ChatHistoryScreen({ onBack, onSelectChat, currentMessage
   };
 
   const clearAllChats = () => {
-    Alert.alert(
+    showModal(
+      'confirm',
       'Clear All Chats',
       'Are you sure you want to delete all chat history? This cannot be undone.',
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'cancel', onPress: () => setModalVisible(false), style: 'secondary' },
         {
-          text: 'Clear All',
-          style: 'destructive',
+          text: 'clear all',
+          style: 'danger',
           onPress: async () => {
+            setModalVisible(false);
             try {
               await AsyncStorage.removeItem(CHAT_HISTORY_KEY);
               setSessions([]);
             } catch (error) {
-              Alert.alert('Error', 'Failed to clear chats');
+              showModal('error', 'Error', 'Failed to clear chats');
               console.error('Failed to clear chats:', error);
             }
           },
@@ -187,6 +213,16 @@ export default function ChatHistoryScreen({ onBack, onSelectChat, currentMessage
           contentContainerStyle={styles.list}
         />
       )}
+
+      {/* Custom Modal */}
+      <CustomModal
+        visible={modalVisible}
+        type={modalType}
+        title={modalTitle}
+        message={modalMessage}
+        buttons={modalButtons}
+        onClose={() => setModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }

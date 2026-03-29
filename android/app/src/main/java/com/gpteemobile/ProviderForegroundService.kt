@@ -18,6 +18,7 @@ class ProviderForegroundService : Service() {
         private const val NOTIFICATION_ID = 1
         const val ACTION_START = "com.gpteemobile.ACTION_START_PROVIDER"
         const val ACTION_STOP = "com.gpteemobile.ACTION_STOP_PROVIDER"
+        const val ACTION_UPDATE = "UPDATE_NOTIFICATION"
 
         fun startService(context: Context) {
             val intent = Intent(context, ProviderForegroundService::class.java).apply {
@@ -38,6 +39,10 @@ class ProviderForegroundService : Service() {
         }
     }
 
+    private var currentTitle = "GPTee Active"
+    private var currentDesc = "Starting..."
+    private var isRunning = false
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
@@ -46,10 +51,23 @@ class ProviderForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
-                val notification = createNotification()
+                currentTitle = intent.getStringExtra("taskTitle") ?: "GPTee Active"
+                currentDesc = intent.getStringExtra("taskDesc") ?: "Starting..."
+                val notification = createNotification(currentTitle, currentDesc)
                 startForeground(NOTIFICATION_ID, notification)
+                isRunning = true
+            }
+            ACTION_UPDATE -> {
+                if (isRunning) {
+                    currentTitle = intent.getStringExtra("taskTitle") ?: currentTitle
+                    currentDesc = intent.getStringExtra("taskDesc") ?: currentDesc
+                    val notification = createNotification(currentTitle, currentDesc)
+                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    notificationManager.notify(NOTIFICATION_ID, notification)
+                }
             }
             ACTION_STOP -> {
+                isRunning = false
                 stopForeground(true)
                 stopSelf()
             }
@@ -77,7 +95,7 @@ class ProviderForegroundService : Service() {
         }
     }
 
-    private fun createNotification(): Notification {
+    private fun createNotification(title: String, desc: String): Notification {
         val notificationIntent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             this,
@@ -87,12 +105,13 @@ class ProviderForegroundService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("GPTee Provider Active")
-            .setContentText("Accepting inference requests")
+            .setContentTitle(title)
+            .setContentText(desc)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setColor(0x27c93f)
             .build()
     }
 }

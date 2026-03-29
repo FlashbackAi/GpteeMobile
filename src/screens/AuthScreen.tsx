@@ -16,12 +16,12 @@ import {
   StyleSheet,
   SafeAreaView,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import {colors, fonts} from '../theme/colors';
 import {checkUserExists, loginExistingUser, createNewUser} from '../services/AuthService';
 import {useAppStore} from '../store/appStore';
+import {CustomModal, ModalType} from '../components/CustomModal';
 
 interface Props {
   onAuthSuccess: () => void;
@@ -37,6 +37,27 @@ export default function AuthScreen({onAuthSuccess}: Props) {
   const [existingUserName, setExistingUserName] = useState<string>('');
   const [generatedName, setGeneratedName] = useState('');
   const handleAuthSuccess = useAppStore(state => state.handleAuthSuccess);
+
+  // Modal state
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalType, setModalType] = useState<ModalType>('info');
+  const [modalTitle, setModalTitle] = useState('');
+  const [modalMessage, setModalMessage] = useState('');
+  const [modalButtons, setModalButtons] = useState<Array<{text: string; onPress: () => void; style?: 'primary' | 'secondary' | 'danger'}>>([]);
+
+  // Helper function to show modal
+  const showModal = (
+    type: ModalType,
+    title: string,
+    message: string,
+    buttons?: Array<{text: string; onPress: () => void; style?: 'primary' | 'secondary' | 'danger'}>
+  ) => {
+    setModalType(type);
+    setModalTitle(title);
+    setModalMessage(message);
+    setModalButtons(buttons || [{ text: 'ok', onPress: () => setModalVisible(false), style: 'primary' }]);
+    setModalVisible(true);
+  };
 
   const generateNewName = () => {
     const {generateGameName} = require('../utils/nameGenerator');
@@ -72,10 +93,10 @@ export default function AuthScreen({onAuthSuccess}: Props) {
       }
     } catch (error: any) {
       console.error('[AuthScreen] Step 1 failed:', error);
-      Alert.alert(
+      showModal(
+        'error',
         'Connection Failed',
-        error?.message || 'Failed to connect wallet. Please try again.',
-        [{text: 'OK'}]
+        error?.message || 'Failed to connect wallet. Please try again.'
       );
     } finally {
       setIsLoading(false);
@@ -105,12 +126,13 @@ export default function AuthScreen({onAuthSuccess}: Props) {
       onAuthSuccess();
     } catch (error: any) {
       console.error('[AuthScreen] Step 2a failed:', error);
-      Alert.alert(
+      showModal(
+        'error',
         'Login Failed',
         error?.message || 'Failed to login. Please try again.',
         [
-          {text: 'Retry', onPress: handleLoginExistingUser},
-          {text: 'Cancel', onPress: () => setAuthStep('initial')},
+          {text: 'cancel', onPress: () => { setModalVisible(false); setAuthStep('initial'); }, style: 'secondary'},
+          {text: 'retry', onPress: () => { setModalVisible(false); handleLoginExistingUser(); }, style: 'primary'},
         ]
       );
     } finally {
@@ -121,7 +143,7 @@ export default function AuthScreen({onAuthSuccess}: Props) {
   // Step 2b: Create new user account
   const handleCreateNewUser = async () => {
     if (!generatedName) {
-      Alert.alert('Error', 'Please generate a node name first.');
+      showModal('error', 'Error', 'Please generate a node name first.');
       return;
     }
 
@@ -146,12 +168,13 @@ export default function AuthScreen({onAuthSuccess}: Props) {
       onAuthSuccess();
     } catch (error: any) {
       console.error('[AuthScreen] Step 2b failed:', error);
-      Alert.alert(
+      showModal(
+        'error',
         'Account Creation Failed',
         error?.message || 'Failed to create account. Please try again.',
         [
-          {text: 'Retry', onPress: handleCreateNewUser},
-          {text: 'Cancel', onPress: () => setAuthStep('initial')},
+          {text: 'cancel', onPress: () => { setModalVisible(false); setAuthStep('initial'); }, style: 'secondary'},
+          {text: 'retry', onPress: () => { setModalVisible(false); handleCreateNewUser(); }, style: 'primary'},
         ]
       );
     } finally {
@@ -322,6 +345,16 @@ export default function AuthScreen({onAuthSuccess}: Props) {
           </>
         )}
       </View>
+
+      {/* Custom Modal */}
+      <CustomModal
+        visible={modalVisible}
+        type={modalType}
+        title={modalTitle}
+        message={modalMessage}
+        buttons={modalButtons}
+        onClose={() => setModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }

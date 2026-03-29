@@ -8,6 +8,7 @@ import {
   StatusBar,
   Switch,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import Toast from 'react-native-toast-message';
@@ -26,7 +27,8 @@ import { FaceRecognitionService } from '../services/FaceRecognitionService';
 import { llamaEngine } from '../inference/LlamaEngine';
 import { COORDINATOR_URL } from '../config';
 import { startForegroundService, stopForegroundService, isServiceRunning } from '../services/ForegroundService';
-import { promptBatteryOptimization } from '../services/BatteryOptimization';
+import { isBatteryOptimizationDisabled, openBatteryOptimizationSettings } from '../services/BatteryOptimization';
+import { BatteryOptimizationGuide } from '../components/BatteryOptimizationGuide';
 
 interface Props {
   onSelectRole: () => void;
@@ -41,6 +43,8 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
   const modelLoaded = useAppStore((s) => s.modelLoaded);
   const providerModeEnabled = useAppStore((s) => s.providerModeEnabled);
   const setProviderModeEnabled = useAppStore((s) => s.setProviderModeEnabled);
+  const localInferenceMode = useAppStore((s) => s.localInferenceMode);
+  const setLocalInferenceMode = useAppStore((s) => s.setLocalInferenceMode);
   const batteryThreshold = useAppStore((s) => s.batteryThreshold);
   const userProfile = useAppStore((s) => s.userProfile);
   const chatHistory = useAppStore((s) => s.chatHistory);
@@ -78,8 +82,12 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
   const [selectedMode, setSelectedMode] = useState<'provider' | 'worker'>('provider');
   const [showFloatingDownload, setShowFloatingDownload] = useState(false);
   const [floatingDownloadMode, setFloatingDownloadMode] = useState<'provider' | 'worker'>('provider');
+  const [showBatteryGuide, setShowBatteryGuide] = useState(false);
+  const [batteryGuideCallback, setBatteryGuideCallback] = useState<() => void>(() => () => {});
   const [greeting, setGreeting] = useState('');
   const [batteryLevel, setBatteryLevel] = useState(100);
+  const [providerToggleLoading, setProviderToggleLoading] = useState(false);
+  const [workerToggleLoading, setWorkerToggleLoading] = useState(false);
 
   // Get time-based greeting - memoized for efficiency
   const getGreeting = useCallback(() => {
@@ -118,14 +126,16 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
 
   // Handle provider mode toggle with battery check
   const handleProviderToggle = async (value: boolean) => {
-    if (value) {
-      // Check if LLM model is downloaded
-      if (!modelDownloaded) {
-        // Show floating download button instead of toast
-        setFloatingDownloadMode('provider');
-        setShowFloatingDownload(true);
-        return;
-      }
+    setProviderToggleLoading(true);
+    try {
+      if (value) {
+        // Check if LLM model is downloaded
+        if (!modelDownloaded) {
+          // Show floating download button instead of toast
+          setFloatingDownloadMode('provider');
+          setShowFloatingDownload(true);
+          return;
+        }
 
       // Check battery level before enabling
       try {
@@ -146,23 +156,24 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
         console.error('Error checking battery level:', error);
       }
 
-      // Prompt for battery optimization before enabling
-      promptBatteryOptimization(
-        async () => {
-          // MUTUAL EXCLUSIVITY: Disable worker mode if enabled
-          if (imageWorkerEnabled) {
-            await setImageWorkerEnabled(false);
-            const workerService = VisionWorkerService.getInstance();
-            await workerService.stopWorkerMode();
-            try {
-              const faceService = FaceRecognitionService.getInstance();
-              await faceService.release();
-            } catch (error) {
-              console.warn('Error releasing vision models:', error);
-            }
-            setVisionModelsLoaded(false);
-            addLog('⚠️ Worker mode disabled - provider mode enabled');
+      // Check if battery optimization is already disabled
+      const isBatteryOptDisabled = await isBatteryOptimizationDisabled();
+
+      const enableProviderMode = async () => {
+        // MUTUAL EXCLUSIVITY: Disable worker mode if enabled
+        if (imageWorkerEnabled) {
+          await setImageWorkerEnabled(false);
+          const workerService = VisionWorkerService.getInstance();
+          await workerService.stopWorkerMode();
+          try {
+            const faceService = FaceRecognitionService.getInstance();
+            await faceService.release();
+          } catch (error) {
+            console.warn('Error releasing vision models:', error);
           }
+          setVisionModelsLoaded(false);
+          addLog('⚠️ Worker mode disabled - provider mode enabled');
+        }
 
           // Load LLM model if not already loaded
           if (modelDownloaded && modelPath && !llamaEngine.isLoaded() && !llamaEngine.isLoading()) {
@@ -200,30 +211,39 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
             }
           }
 
-          // Enable provider mode
-          await setProviderModeEnabled(true);
+        // Enable provider mode
+        await setProviderModeEnabled(true);
 
-          // Start foreground service
-          try {
-            await startForegroundService();
-            addLog('✅ Background service started');
-          } catch (error: any) {
-            console.error('Failed to start foreground service:', error);
-            addLog(`⚠️ Background service failed: ${error.message}`);
-          }
-        },
-        () => {
-          // User cancelled - don't enable
-          addLog('⚠️ Provider mode requires battery optimization to be disabled');
+        // Start foreground service
+        try {
+          await startForegroundService();
+          addLog('✅ Background service started');
+        } catch (error: any) {
+          console.error('Failed to start foreground service:', error);
+          addLog(`⚠️ Background service failed: ${error.message}`);
         }
-      );
+      };
+
+      // Show guide only if battery optimization is not disabled
+      if (!isBatteryOptDisabled) {
+        setBatteryGuideCallback(() => enableProviderMode);
+        setShowBatteryGuide(true);
+      } else {
+        await enableProviderMode();
+      }
     } else {
-      // Disabling provider mode - unload the model and stop service
+      // Disabling provider mode - also disable local mode and unload the model
       if (llamaEngine.isLoaded()) {
         addLog('⏳ Unloading LLM model...');
         await llamaEngine.unload();
         setModelLoaded(false);
         addLog('✅ LLM model unloaded');
+      }
+
+      // Disable local mode if it was enabled
+      if (localInferenceMode) {
+        await setLocalInferenceMode(false);
+        addLog('ℹ️ Local mode disabled - re-enable from chat if needed');
       }
 
       // Stop foreground service if no modes are active
@@ -236,21 +256,26 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
         }
       }
 
-      // Disable provider mode
-      await setProviderModeEnabled(false);
+        // Disable provider mode
+        await setProviderModeEnabled(false);
+      }
+    } finally {
+      setProviderToggleLoading(false);
     }
   };
 
   // Handle worker mode toggle
   const handleWorkerToggle = async (value: boolean) => {
-    if (value) {
-      // Check if vision models are downloaded
-      if (!visionModelsDownloaded) {
-        // Show floating download button instead of navigating
-        setFloatingDownloadMode('worker');
-        setShowFloatingDownload(true);
-        return;
-      }
+    setWorkerToggleLoading(true);
+    try {
+      if (value) {
+        // Check if vision models are downloaded
+        if (!visionModelsDownloaded) {
+          // Show floating download button instead of navigating
+          setFloatingDownloadMode('worker');
+          setShowFloatingDownload(true);
+          return;
+        }
 
       // Check battery level
       try {
@@ -271,63 +296,67 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
         console.error('Error checking battery level:', error);
       }
 
-      // Prompt for battery optimization before enabling
-      promptBatteryOptimization(
-        async () => {
-          // MUTUAL EXCLUSIVITY: Disable provider mode if enabled
-          if (providerModeEnabled) {
-            // handleProviderToggle will handle model unloading
-            await handleProviderToggle(false);
-            addLog('⚠️ Provider mode disabled - worker mode enabled');
-          }
+      // Check if battery optimization is already disabled
+      const isBatteryOptDisabled = await isBatteryOptimizationDisabled();
 
-          // Load vision models if not already loaded
-          if (!visionModelsLoaded) {
+      const enableWorkerMode = async () => {
+        // MUTUAL EXCLUSIVITY: Disable provider mode if enabled
+        if (providerModeEnabled) {
+          // handleProviderToggle will handle model unloading
+          await handleProviderToggle(false);
+          addLog('⚠️ Provider mode disabled - worker mode enabled');
+        }
+
+        // Load vision models if not already loaded
+        if (!visionModelsLoaded) {
+          Toast.show({
+            type: 'info',
+            text1: 'loading vision models...',
+            text2: 'this may take a moment',
+            position: 'top',
+          });
+
+          try {
+            const faceService = FaceRecognitionService.getInstance();
+            await faceService.initialize();
+            setVisionModelsLoaded(true);
+            addLog('✅ Vision models loaded successfully');
+          } catch (error) {
             Toast.show({
-              type: 'info',
-              text1: 'loading vision models...',
-              text2: 'this may take a moment',
+              type: 'error',
+              text1: 'failed to load models',
+              text2: 'could not initialize vision models',
               position: 'top',
             });
-
-            try {
-              const faceService = FaceRecognitionService.getInstance();
-              await faceService.initialize();
-              setVisionModelsLoaded(true);
-              addLog('✅ Vision models loaded successfully');
-            } catch (error) {
-              Toast.show({
-                type: 'error',
-                text1: 'failed to load models',
-                text2: 'could not initialize vision models',
-                position: 'top',
-              });
-              addLog('❌ Failed to load vision models');
-              return;
-            }
+            addLog('❌ Failed to load vision models');
+            return;
           }
-
-          await setImageWorkerEnabled(true);
-
-          // Start foreground service
-          try {
-            await startForegroundService();
-            addLog('✅ Background service started');
-          } catch (error: any) {
-            console.error('Failed to start foreground service:', error);
-            addLog(`⚠️ Background service failed: ${error.message}`);
-          }
-
-          // Navigate to ImageWorkerScreen to complete setup
-          if (onOpenImageWorker) {
-            onOpenImageWorker();
-          }
-        },
-        () => {
-          // User cancelled - don't enable
-          addLog('⚠️ Worker mode requires battery optimization to be disabled');
         }
-      );
+
+        await setImageWorkerEnabled(true);
+
+        // Start foreground service
+        try {
+          await startForegroundService();
+          addLog('✅ Background service started');
+        } catch (error: any) {
+          console.error('Failed to start foreground service:', error);
+          addLog(`⚠️ Background service failed: ${error.message}`);
+        }
+
+        // Navigate to ImageWorkerScreen to complete setup
+        if (onOpenImageWorker) {
+          onOpenImageWorker();
+        }
+      };
+
+      // Show guide only if battery optimization is not disabled
+      if (!isBatteryOptDisabled) {
+        setBatteryGuideCallback(() => enableWorkerMode);
+        setShowBatteryGuide(true);
+      } else {
+        await enableWorkerMode();
+      }
     } else {
       await setImageWorkerEnabled(false);
       const workerService = VisionWorkerService.getInstance();
@@ -339,9 +368,12 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
           await stopForegroundService();
           addLog('✅ Background service stopped');
         } catch (error: any) {
-          console.error('Failed to stop foreground service:', error);
+            console.error('Failed to stop foreground service:', error);
         }
       }
+      }
+    } finally {
+      setWorkerToggleLoading(false);
     }
   };
 
@@ -602,13 +634,17 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
                   >
                     <Icon name="info" size={16} color={colors.text.tertiary} />
                   </TouchableOpacity>
-                  <Switch
-                    value={providerModeEnabled}
-                    onValueChange={handleProviderToggle}
-                    trackColor={{ false: colors.input.border, true: colors.accent.primary }}
-                    thumbColor={providerModeEnabled ? colors.button.secondaryText : colors.text.tertiary}
-                    style={styles.modeSwitch}
-                  />
+                  {providerToggleLoading ? (
+                    <ActivityIndicator size="small" color={colors.accent.primary} />
+                  ) : (
+                    <Switch
+                      value={providerModeEnabled}
+                      onValueChange={handleProviderToggle}
+                      trackColor={{ false: colors.input.border, true: colors.accent.primary }}
+                      thumbColor={providerModeEnabled ? colors.button.secondaryText : colors.text.tertiary}
+                      style={styles.modeSwitch}
+                    />
+                  )}
                 </View>
               </View>
               <Text style={styles.modeDescription}>
@@ -647,13 +683,17 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
                   >
                     <Icon name="info" size={16} color={colors.text.tertiary} />
                   </TouchableOpacity>
-                  <Switch
-                    value={imageWorkerEnabled}
-                    onValueChange={handleWorkerToggle}
-                    trackColor={{ false: colors.input.border, true: colors.accent.primary }}
-                    thumbColor={imageWorkerEnabled ? colors.button.secondaryText : colors.text.tertiary}
-                    style={styles.modeSwitch}
-                  />
+                  {workerToggleLoading ? (
+                    <ActivityIndicator size="small" color={colors.accent.primary} />
+                  ) : (
+                    <Switch
+                      value={imageWorkerEnabled}
+                      onValueChange={handleWorkerToggle}
+                      trackColor={{ false: colors.input.border, true: colors.accent.primary }}
+                      thumbColor={imageWorkerEnabled ? colors.button.secondaryText : colors.text.tertiary}
+                      style={styles.modeSwitch}
+                    />
+                  )}
                 </View>
               </View>
               <Text style={styles.modeDescription}>
@@ -725,6 +765,23 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
         }}
         currentChatId={currentChatId || undefined}
         onNewChat={onSelectRole}
+      />
+
+      {/* Battery Optimization Guide */}
+      <BatteryOptimizationGuide
+        visible={showBatteryGuide}
+        onOpenSettings={async () => {
+          setShowBatteryGuide(false);
+          await openBatteryOptimizationSettings();
+          // Execute the callback after opening settings
+          if (batteryGuideCallback) {
+            batteryGuideCallback();
+          }
+        }}
+        onLater={() => {
+          setShowBatteryGuide(false);
+          addLog('⚠️ Battery optimization needs to be disabled for reliable background operation');
+        }}
       />
     </SafeAreaView>
   );
