@@ -29,6 +29,7 @@ import { COORDINATOR_URL } from '../config';
 import { startForegroundService, stopForegroundService, isServiceRunning } from '../services/ForegroundService';
 import { isBatteryOptimizationDisabled, openBatteryOptimizationSettings } from '../services/BatteryOptimization';
 import { BatteryOptimizationGuide } from '../components/BatteryOptimizationGuide';
+import { checkNotificationPermission, requestNotificationPermission } from '../services/NotificationPermission';
 
 interface Props {
   onSelectRole: () => void;
@@ -156,8 +157,27 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
         console.error('Error checking battery level:', error);
       }
 
+      // Check notification permission first
+      const hasNotificationPermission = await checkNotificationPermission();
+      if (!hasNotificationPermission) {
+        console.log('[HomeScreen] Requesting notification permission...');
+        const granted = await requestNotificationPermission();
+        if (!granted) {
+          Toast.show({
+            type: 'error',
+            text1: 'notification permission required',
+            text2: 'please enable notifications to see background service status',
+            position: 'top',
+            visibilityTime: 4000,
+          });
+          return;
+        }
+      }
+
       // Check if battery optimization is already disabled
       const isBatteryOptDisabled = await isBatteryOptimizationDisabled();
+      console.log('[HomeScreen] Battery optimization disabled:', isBatteryOptDisabled);
+      addLog(`ℹ️ Battery optimization check: ${isBatteryOptDisabled ? 'disabled' : 'enabled'}`);
 
       const enableProviderMode = async () => {
         // MUTUAL EXCLUSIVITY: Disable worker mode if enabled
@@ -226,9 +246,13 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
 
       // Show guide only if battery optimization is not disabled
       if (!isBatteryOptDisabled) {
+        console.log('[HomeScreen] Showing battery optimization guide...');
+        addLog('⚡ Battery optimization needs to be disabled');
         setBatteryGuideCallback(() => enableProviderMode);
         setShowBatteryGuide(true);
       } else {
+        console.log('[HomeScreen] Battery optimization already disabled, enabling provider mode...');
+        addLog('⚡ Battery optimization already disabled - enabling mode');
         await enableProviderMode();
       }
     } else {
@@ -294,6 +318,23 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
         }
       } catch (error) {
         console.error('Error checking battery level:', error);
+      }
+
+      // Check notification permission first
+      const hasNotificationPermission = await checkNotificationPermission();
+      if (!hasNotificationPermission) {
+        console.log('[HomeScreen] Requesting notification permission...');
+        const granted = await requestNotificationPermission();
+        if (!granted) {
+          Toast.show({
+            type: 'error',
+            text1: 'notification permission required',
+            text2: 'please enable notifications to see background service status',
+            position: 'top',
+            visibilityTime: 4000,
+          });
+          return;
+        }
       }
 
       // Check if battery optimization is already disabled

@@ -49,13 +49,16 @@ class ProviderForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        android.util.Log.d("ProviderForegroundService", "onStartCommand called with action: ${intent?.action}")
         when (intent?.action) {
             ACTION_START -> {
+                android.util.Log.d("ProviderForegroundService", "Starting foreground service")
                 currentTitle = intent.getStringExtra("taskTitle") ?: "GPTee Active"
                 currentDesc = intent.getStringExtra("taskDesc") ?: "Starting..."
                 val notification = createNotification(currentTitle, currentDesc)
                 startForeground(NOTIFICATION_ID, notification)
                 isRunning = true
+                android.util.Log.d("ProviderForegroundService", "Foreground service started with notification")
             }
             ACTION_UPDATE -> {
                 if (isRunning) {

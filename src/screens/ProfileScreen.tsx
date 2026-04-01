@@ -29,6 +29,8 @@ import { FaceRecognitionService } from '../services/FaceRecognitionService';
 import { llamaEngine } from '../inference/LlamaEngine';
 import Toast from 'react-native-toast-message';
 import type { ThermalStatus } from '../services/ThermalMonitorService';
+import { checkNotificationPermission, requestNotificationPermission } from '../services/NotificationPermission';
+import { startForegroundService, stopForegroundService, isServiceRunning } from '../services/ForegroundService';
 
 interface ProfileScreenProps {
   onBack: () => void;
@@ -278,6 +280,21 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
         return;
       }
 
+      // Check notification permission
+      const hasNotificationPermission = await checkNotificationPermission();
+      if (!hasNotificationPermission) {
+        const granted = await requestNotificationPermission();
+        if (!granted) {
+          Toast.show({
+            type: 'error',
+            text1: 'notification permission required',
+            text2: 'please enable notifications to see background service status',
+            position: 'top',
+          });
+          return;
+        }
+      }
+
       // MUTUAL EXCLUSIVITY: Disable worker mode if enabled
       if (imageWorkerEnabled) {
         await setImageWorkerEnabled(false);
@@ -372,6 +389,21 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
           position: 'top',
         });
         return;
+      }
+
+      // Check notification permission
+      const hasNotificationPermission = await checkNotificationPermission();
+      if (!hasNotificationPermission) {
+        const granted = await requestNotificationPermission();
+        if (!granted) {
+          Toast.show({
+            type: 'error',
+            text1: 'notification permission required',
+            text2: 'please enable notifications to see background service status',
+            position: 'top',
+          });
+          return;
+        }
       }
 
       // MUTUAL EXCLUSIVITY: Disable provider mode if enabled

@@ -19,6 +19,7 @@ import { LogsPopup } from '../components/LogsPopup';
 import { FloatingDownloadButton } from '../components/FloatingDownloadButton';
 import { Sidebar } from '../components/Sidebar';
 import { CustomToast } from '../components/CustomToast';
+import { checkNotificationPermission, requestNotificationPermission } from '../services/NotificationPermission';
 
 interface Props {
   onBack: () => void;
@@ -391,6 +392,21 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
         }
       } catch (error) {
         console.error('Error checking battery level:', error);
+      }
+
+      // Check notification permission
+      const hasNotificationPermission = await checkNotificationPermission();
+      if (!hasNotificationPermission) {
+        const granted = await requestNotificationPermission();
+        if (!granted) {
+          Toast.show({
+            type: 'error',
+            text1: 'notification permission required',
+            text2: 'please enable notifications to see background service status',
+            position: 'top',
+          });
+          return;
+        }
       }
 
       // Load LLM model if not already loaded

@@ -17,6 +17,7 @@ import { ChatMessage } from './src/network/PeerProtocol';
 import { ModelDownloadManager, AVAILABLE_MODELS } from './src/services/ModelDownloadManager';
 import { VisionWorkerService } from './src/services/VisionWorkerService';
 import { FaceRecognitionService } from './src/services/FaceRecognitionService';
+import { requestNotificationPermission } from './src/services/NotificationPermission';
 
 // Set default font for all Text and TextInput components
 (Text as any).defaultProps = (Text as any).defaultProps || {};
@@ -74,6 +75,9 @@ export default function App() {
 
   useEffect(() => {
     const loadData = async () => {
+      // Request notification permission on first launch (Android 13+)
+      await requestNotificationPermission();
+
       // Check auth status first
       await checkAuthStatus();
 

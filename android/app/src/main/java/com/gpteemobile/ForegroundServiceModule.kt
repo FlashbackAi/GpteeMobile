@@ -18,6 +18,7 @@ class ForegroundServiceModule(reactContext: ReactApplicationContext) :
     fun startService(options: ReadableMap, promise: Promise) {
         try {
             val intent = Intent(reactApplicationContext, ProviderForegroundService::class.java)
+            intent.action = ProviderForegroundService.ACTION_START
 
             // Pass options to service
             if (options.hasKey("taskTitle")) {
@@ -41,6 +42,7 @@ class ForegroundServiceModule(reactContext: ReactApplicationContext) :
     fun stopService(promise: Promise) {
         try {
             val intent = Intent(reactApplicationContext, ProviderForegroundService::class.java)
+            intent.action = ProviderForegroundService.ACTION_STOP
             reactApplicationContext.stopService(intent)
             promise.resolve(true)
         } catch (e: Exception) {
@@ -52,7 +54,7 @@ class ForegroundServiceModule(reactContext: ReactApplicationContext) :
     fun updateNotification(options: ReadableMap, promise: Promise) {
         try {
             val intent = Intent(reactApplicationContext, ProviderForegroundService::class.java)
-            intent.action = "UPDATE_NOTIFICATION"
+            intent.action = ProviderForegroundService.ACTION_UPDATE
 
             if (options.hasKey("taskTitle")) {
                 intent.putExtra("taskTitle", options.getString("taskTitle"))
