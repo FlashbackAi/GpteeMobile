@@ -21,6 +21,7 @@ import {
 import { colors, fonts } from '../theme/colors';
 import { Accordion } from '../components/Accordion';
 import { CustomModal, ModalType } from '../components/CustomModal';
+import { AnimatedCornerBorder } from '../components/AnimatedCornerBorder';
 import { VisionModelDownloader } from '../services/VisionModelDownloader';
 import { VISION_MODELS } from '../services/FaceRecognitionModels';
 import { VisionWorkerService } from '../services/VisionWorkerService';
@@ -88,11 +89,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
   const [modalMessage, setModalMessage] = useState('');
   const [modalButtons, setModalButtons] = useState<Array<{text: string; onPress: () => void; style?: 'primary' | 'secondary' | 'danger'}>>([]);
 
-  // Refs for scrolling and highlighting
+  // Refs for scrolling
   const scrollViewRef = useRef<ScrollView>(null);
   const llmButtonRef = useRef<View>(null);
   const visionButtonRef = useRef<View>(null);
-  const highlightAnim = useRef(new Animated.Value(0)).current;
 
   const modelManager = ModelDownloadManager.getInstance();
   const visionDownloader = VisionModelDownloader.getInstance();
@@ -112,6 +112,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
   };
 
   // Handle highlighting and scrolling when highlightModel is set
+  // Scroll to highlighted button when highlightModel prop changes
   useEffect(() => {
     if (highlightModel) {
       // Wait for layout to complete
@@ -127,28 +128,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
             },
             () => {}
           );
-
-          // Start floating light animation with glow effect
-          Animated.loop(
-            Animated.sequence([
-              Animated.timing(highlightAnim, {
-                toValue: 1,
-                duration: 1000,
-                useNativeDriver: false,
-              }),
-              Animated.timing(highlightAnim, {
-                toValue: 0,
-                duration: 1000,
-                useNativeDriver: false,
-              }),
-            ])
-          ).start();
-
-          // Stop animation after 6 seconds (longer to be more noticeable)
-          setTimeout(() => {
-            highlightAnim.stopAnimation();
-            highlightAnim.setValue(0);
-          }, 6000);
         }
       }, 500);
 
@@ -703,40 +682,24 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
             {/* Action Buttons */}
             <View style={styles.modelActions}>
               {!modelDownloaded && !modelDownloading && (
-                <Animated.View
-                  ref={llmButtonRef}
-                  style={{
-                    borderWidth: highlightModel === 'llm' ? highlightAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [3, 5]
-                    }) : 2,
-                    borderColor: highlightModel === 'llm' ? highlightAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: ['rgba(39, 201, 63, 0.5)', 'rgba(39, 201, 63, 1)']
-                    }) as any : colors.terminal.green,
-                    borderRadius: 6,
-                    shadowColor: highlightModel === 'llm' ? '#27c93f' : 'transparent',
-                    shadowOpacity: highlightModel === 'llm' ? highlightAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.6, 1]
-                    }) as any : 0,
-                    shadowRadius: highlightModel === 'llm' ? highlightAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [10, 20]
-                    }) as any : 0,
-                    elevation: highlightModel === 'llm' ? 12 : 0,
-                    backgroundColor: highlightModel === 'llm' ? highlightAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: ['rgba(39, 201, 63, 0.05)', 'rgba(39, 201, 63, 0.15)']
-                    }) as any : 'transparent',
-                  }}
+                <AnimatedCornerBorder
+                  isActive={highlightModel === 'llm'}
+                  borderRadius={6}
+                  cornerSize={20}
+                  borderWidth={3}
+                  color={colors.terminal.green}
                 >
-                  <TouchableOpacity
-                    style={[styles.terminalButton, { borderWidth: 0 }]}
-                    onPress={handleDownloadModel}>
-                    <Text style={styles.terminalButtonText}>[ download ]</Text>
-                  </TouchableOpacity>
-                </Animated.View>
+                  <View ref={llmButtonRef}>
+                    <TouchableOpacity
+                      style={[
+                        styles.terminalButton,
+                        highlightModel === 'llm' && { borderWidth: 0, borderColor: 'transparent' }
+                      ]}
+                      onPress={handleDownloadModel}>
+                      <Text style={styles.terminalButtonText}>[ download ]</Text>
+                    </TouchableOpacity>
+                  </View>
+                </AnimatedCornerBorder>
               )}
 
               {modelDownloaded && !modelDownloading && (
@@ -803,40 +766,24 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onBack, highlightM
             {/* Action Buttons */}
             <View style={styles.modelActions}>
               {!visionModelsDownloaded && !downloadingVisionModels && (
-                <Animated.View
-                  ref={visionButtonRef}
-                  style={{
-                    borderWidth: highlightModel === 'vision' ? highlightAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [3, 5]
-                    }) : 2,
-                    borderColor: highlightModel === 'vision' ? highlightAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: ['rgba(39, 201, 63, 0.5)', 'rgba(39, 201, 63, 1)']
-                    }) as any : colors.terminal.green,
-                    borderRadius: 6,
-                    shadowColor: highlightModel === 'vision' ? '#27c93f' : 'transparent',
-                    shadowOpacity: highlightModel === 'vision' ? highlightAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.6, 1]
-                    }) as any : 0,
-                    shadowRadius: highlightModel === 'vision' ? highlightAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [10, 20]
-                    }) as any : 0,
-                    elevation: highlightModel === 'vision' ? 12 : 0,
-                    backgroundColor: highlightModel === 'vision' ? highlightAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: ['rgba(39, 201, 63, 0.05)', 'rgba(39, 201, 63, 0.15)']
-                    }) as any : 'transparent',
-                  }}
+                <AnimatedCornerBorder
+                  isActive={highlightModel === 'vision'}
+                  borderRadius={6}
+                  cornerSize={20}
+                  borderWidth={3}
+                  color={colors.terminal.green}
                 >
-                  <TouchableOpacity
-                    style={[styles.terminalButton, { borderWidth: 0 }]}
-                    onPress={handleDownloadVisionModels}>
-                    <Text style={styles.terminalButtonText}>[ download ]</Text>
-                  </TouchableOpacity>
-                </Animated.View>
+                  <View ref={visionButtonRef}>
+                    <TouchableOpacity
+                      style={[
+                        styles.terminalButton,
+                        highlightModel === 'vision' && { borderWidth: 0, borderColor: 'transparent' }
+                      ]}
+                      onPress={handleDownloadVisionModels}>
+                      <Text style={styles.terminalButtonText}>[ download ]</Text>
+                    </TouchableOpacity>
+                  </View>
+                </AnimatedCornerBorder>
               )}
 
               {visionModelsDownloaded && !downloadingVisionModels && (
