@@ -19,7 +19,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import {colors, fonts} from '../theme/colors';
-import {authenticateWithWallet} from '../services/AuthService';
+import {checkUserExists, loginExistingUser, createNewUser} from '../services/AuthService';
 import {useAppStore} from '../store/appStore';
 import {CustomModal, ModalType} from '../components/CustomModal';
 
@@ -65,36 +65,38 @@ export default function AuthScreen({onAuthSuccess}: Props) {
     setGeneratedName(newName);
   };
 
-  // Authenticate with wallet - opens wallet only once
+  // Step 1: Connect wallet and check if user exists
   const handleConnectWallet = async () => {
     setIsLoading(true);
     try {
-      console.log('[AuthScreen] Authenticating with wallet...');
+      console.log('[AuthScreen] Step 1: Connecting wallet...');
 
-      const result = await authenticateWithWallet();
+      const result = await checkUserExists();
 
-      if (!result.success || !result.walletAddress || !result.nodeId) {
-        throw new Error(result.error || 'Authentication failed');
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to check user');
       }
 
-      console.log('[AuthScreen] ✅ Auth complete - navigating to app');
+      setWalletAddress(result.walletAddress!);
+      setAuthToken(result.authToken!);
 
-      // Update app state
-      await handleAuthSuccess(
-        result.walletAddress,
-        result.nodeId,
-        result.peerId,
-        result.displayName
-      );
-
-      // Navigate to main app immediately
-      onAuthSuccess();
+      if (result.exists) {
+        // Existing user found
+        console.log('[AuthScreen] Existing user detected');
+        setExistingUserName(result.displayName || 'User');
+        setAuthStep('existing-user');
+      } else {
+        // New user - generate name for them
+        console.log('[AuthScreen] New user detected');
+        generateNewName();
+        setAuthStep('new-user');
+      }
     } catch (error: any) {
-      console.error('[AuthScreen] Authentication failed:', error);
+      console.error('[AuthScreen] Step 1 failed:', error);
       showModal(
         'error',
-        'Authentication Failed',
-        error?.message || 'Failed to authenticate with wallet. Please try again.'
+        'Connection Failed',
+        error?.message || 'Failed to connect wallet. Please try again.'
       );
     } finally {
       setIsLoading(false);
