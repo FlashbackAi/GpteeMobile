@@ -86,13 +86,18 @@ const createHttpClient = (): AxiosInstance => {
   // Request interceptor: Add access token to headers
   client.interceptors.request.use(
     async (config: InternalAxiosRequestConfig) => {
+      console.log(`[HTTP] → ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
+      console.log('[HTTP] Request data:', config.data);
+
       const accessToken = await getAccessToken();
       if (accessToken && config.headers) {
         config.headers.Authorization = `Bearer ${accessToken}`;
+        console.log('[HTTP] Added Authorization header');
       }
       return config;
     },
     error => {
+      console.error('[HTTP] Request error:', error.message);
       return Promise.reject(error);
     },
   );
@@ -101,13 +106,28 @@ const createHttpClient = (): AxiosInstance => {
   // NOTE: Token refresh endpoint not implemented in backend yet
   // For now, 401 will just clear tokens and require re-login
   client.interceptors.response.use(
-    response => response,
+    response => {
+      console.log(`[HTTP] ✓ ${response.status} ${response.config.method?.toUpperCase()} ${response.config.url}`);
+      console.log('[HTTP] Response data:', response.data);
+      return response;
+    },
     async error => {
+      if (error.response) {
+        console.error(`[HTTP] ✗ ${error.response.status} ${error.config?.method?.toUpperCase()} ${error.config?.url}`);
+        console.error('[HTTP] Error response:', error.response.data);
+      } else if (error.request) {
+        console.error('[HTTP] ✗ No response received:', error.config?.url);
+        console.error('[HTTP] Error message:', error.message);
+      } else {
+        console.error('[HTTP] ✗ Request setup error:', error.message);
+      }
+
       const originalRequest = error.config;
 
       // If 401 and we haven't retried yet
       if (error.response?.status === 401 && !originalRequest._retry) {
         originalRequest._retry = true;
+        console.log('[HTTP] 401 received - clearing auth tokens');
 
         // TODO: Implement token refresh when backend endpoint is ready
         // For now, clear tokens and force re-auth

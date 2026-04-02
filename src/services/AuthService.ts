@@ -78,13 +78,16 @@ export const checkUserExists = async (): Promise<AuthResult> => {
   try {
     console.log('[Auth] Step 1: Connecting to wallet...');
     const {address, authToken} = await connectWallet();
-    console.log('[Auth] Wallet connected:', address);
+    console.log('[Auth] ✓ Wallet connected successfully');
+    console.log('[Auth] Address:', address);
+    console.log('[Auth] Auth token received:', !!authToken);
 
-    console.log('[Auth] Checking if node exists...');
+    console.log('[Auth] → Making HTTP request to check if node exists...');
     const checkResponse = await httpClient.post<CheckNodeResponse>(
       '/auth/solana/check-node',
       {address},
     );
+    console.log('[Auth] ✓ Received response from check-node');
 
     const nodeExists = checkResponse.data.exists;
     const nodeName = checkResponse.data.name;
@@ -98,7 +101,11 @@ export const checkUserExists = async (): Promise<AuthResult> => {
       displayName: nodeName,
     };
   } catch (error: any) {
-    console.error('[Auth] Step 1 failed:', error);
+    console.error('[Auth] ✗ Step 1 failed with error');
+    console.error('[Auth] Error type:', error?.name);
+    console.error('[Auth] Error message:', error?.message);
+    console.error('[Auth] Error stack:', error?.stack);
+    console.error('[Auth] Full error:', JSON.stringify(error, null, 2));
     return {
       success: false,
       error: error.response?.data?.message || error.message || 'Failed to check user',
