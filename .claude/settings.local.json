@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(npm install:*)",
+      "Bash(cat:*)",
+      "Bash(dir /s \"E:\\Data\\Projects\\gpteeRelay\\src\")",
+      "Bash(npm view:*)",
+      "Bash(timeout 300 npx react-native:*)",
+      "Bash(tee:*)",
+      "Bash(./gradlew app:installDebug:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -23,6 +23,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import bs58 from 'bs58';
 import {v4 as uuidv4} from 'uuid';
 import {generateGameName} from '../utils/nameGenerator';
+import {API_BASE_URL} from '../config';
 
 const CONNECTED_WALLET_KEY = 'connected_wallet_address';
 const WALLET_AUTH_TOKEN_KEY = 'wallet_auth_token';
@@ -154,17 +155,30 @@ export const loginExistingUser = async (
 
       console.log('[Auth] Wallet reauthorized:', address);
 
-      // Step 2: Get challenge from backend (network call INSIDE transact)
+      // Step 2: Get challenge from backend (using native fetch - axios fails when backgrounded)
       console.log('[Auth] Requesting challenge...');
-      const challengeResponse = await httpClient.post<ChallengeResponse>(
-        '/auth/solana/challenge-node',
-        {
-          address,
-          platform: 'mobile',
-        },
+      console.log('[Auth] DEBUG: fetch URL =', `${API_BASE_URL}/auth/solana/challenge-node`);
+
+      const fetchPromise = fetch(`${API_BASE_URL}/auth/solana/challenge-node`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({address, platform: 'mobile'}),
+      });
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Fetch timeout after 10s')), 10000)
       );
 
-      const challengeMessage = challengeResponse.data.message;
+      const challengeRes = await Promise.race([fetchPromise, timeoutPromise]) as Response;
+      console.log('[Auth] DEBUG: fetch completed with status', challengeRes.status);
+
+      if (!challengeRes.ok) {
+        const errorText = await challengeRes.text().catch(() => '');
+        throw new Error(errorText || `Failed to get challenge (${challengeRes.status})`);
+      }
+
+      const challengeData: ChallengeResponse = await challengeRes.json();
+      const challengeMessage = challengeData.message;
       console.log('[Auth] Challenge received');
 
       // Step 3: Sign message in same wallet session
@@ -197,18 +211,21 @@ export const loginExistingUser = async (
 
       console.log('[Auth] Challenge signed');
 
-      // Step 4: Verify and login (network call INSIDE transact)
+      // Step 4: Verify and login (using native fetch - axios fails when backgrounded)
       console.log('[Auth] Verifying signature...');
-      const verifyResponse = await httpClient.post<VerifyNodeResponse>(
-        '/auth/solana/verify-node',
-        {
-          address,
-          message: challengeMessage,
-          signature: signatureBase58,
-        },
-      );
+      const verifyRes = await fetch(`${API_BASE_URL}/auth/solana/verify-node`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({address, message: challengeMessage, signature: signatureBase58}),
+      });
 
-      const {node_id, name, accessToken, refreshToken} = verifyResponse.data;
+      if (!verifyRes.ok) {
+        const errorText = await verifyRes.text().catch(() => '');
+        throw new Error(errorText || `Failed to verify signature (${verifyRes.status})`);
+      }
+
+      const verifyData: VerifyNodeResponse = await verifyRes.json();
+      const {node_id, name, accessToken, refreshToken} = verifyData;
 
       // Store tokens
       await storeAuthTokens(accessToken, refreshToken, address);
@@ -297,17 +314,21 @@ export const createNewUser = async (
 
       console.log('[Auth] Wallet reauthorized:', address);
 
-      // Step 2: Get challenge from backend (network call INSIDE transact)
+      // Step 2: Get challenge from backend (using native fetch - axios fails when backgrounded)
       console.log('[Auth] Requesting challenge...');
-      const challengeResponse = await httpClient.post<ChallengeResponse>(
-        '/auth/solana/challenge-node',
-        {
-          address,
-          platform: 'mobile',
-        },
-      );
+      const challengeRes = await fetch(`${API_BASE_URL}/auth/solana/challenge-node`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({address, platform: 'mobile'}),
+      });
 
-      const challengeMessage = challengeResponse.data.message;
+      if (!challengeRes.ok) {
+        const errorText = await challengeRes.text().catch(() => '');
+        throw new Error(errorText || `Failed to get challenge (${challengeRes.status})`);
+      }
+
+      const challengeData: ChallengeResponse = await challengeRes.json();
+      const challengeMessage = challengeData.message;
       console.log('[Auth] Challenge received');
 
       // Step 3: Sign message in same wallet session
@@ -340,21 +361,28 @@ export const createNewUser = async (
 
       console.log('[Auth] Challenge signed');
 
-      // Step 4: Create node (network call INSIDE transact)
+      // Step 4: Create node (using native fetch - axios fails when backgrounded)
       console.log('[Auth] Creating node with name:', displayName);
       const nodeId = uuidv4();
-      const createResponse = await httpClient.post<CreateNodeResponse>(
-        '/auth/solana/create-node',
-        {
+      const createRes = await fetch(`${API_BASE_URL}/auth/solana/create-node`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
           id: nodeId,
           name: displayName,
           address,
           message: challengeMessage,
           signature: signatureBase58,
-        },
-      );
+        }),
+      });
 
-      const {node_id, accessToken, refreshToken} = createResponse.data;
+      if (!createRes.ok) {
+        const errorText = await createRes.text().catch(() => '');
+        throw new Error(errorText || `Failed to create node (${createRes.status})`);
+      }
+
+      const createData: CreateNodeResponse = await createRes.json();
+      const {node_id, accessToken, refreshToken} = createData;
 
       // Store tokens
       await storeAuthTokens(accessToken, refreshToken, address);
