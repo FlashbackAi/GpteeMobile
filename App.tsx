@@ -20,13 +20,15 @@ import { FaceRecognitionService } from './src/services/FaceRecognitionService';
 import { requestNotificationPermission } from './src/services/NotificationPermission';
 
 // Set default font for all Text and TextInput components
-(Text as any).defaultProps = (Text as any).defaultProps || {};
-(Text as any).defaultProps.style = { fontFamily: fonts.regular };
+// TEMP COMMENTED OUT FOR DEBUGGING
+// (Text as any).defaultProps = (Text as any).defaultProps || {};
+// (Text as any).defaultProps.style = { fontFamily: fonts.regular };
 
-(TextInput as any).defaultProps = (TextInput as any).defaultProps || {};
-(TextInput as any).defaultProps.style = { fontFamily: fonts.regular };
+// (TextInput as any).defaultProps = (TextInput as any).defaultProps || {};
+// (TextInput as any).defaultProps.style = { fontFamily: fonts.regular };
 
 export default function App() {
+  console.log('[App] Component function starting...');
   const [showProfile, setShowProfile] = useState(false);
   const [highlightModel, setHighlightModel] = useState<'llm' | 'vision' | null>(null);
   const [showChatHistory, setShowChatHistory] = useState(false);
@@ -65,6 +67,7 @@ export default function App() {
     setImageWorkerStatus,
     setImageWorkerStats,
     updateImageWorkerStats,
+    setVisionModelsLoaded,
   } = useAppStore();
 
   // ── Load user profile and check model state on mount ──────────────────────

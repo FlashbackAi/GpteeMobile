@@ -10,7 +10,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import CryptoJS from 'crypto-js';
+const CryptoJS = require('crypto-js');
 import {
   RTCPeerConnection,
   RTCIceCandidate,

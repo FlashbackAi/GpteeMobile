@@ -84,14 +84,16 @@ export const checkUserExists = async (): Promise<AuthResult> => {
     console.log('[Auth] Auth token received:', !!authToken);
 
     console.log('[Auth] → Making HTTP request to check if node exists...');
-    const checkResponse = await httpClient.post<CheckNodeResponse>(
-      '/auth/solana/check-node',
-      {address},
-    );
+    console.log('[Auth] Request URL:', `${API_BASE_URL}/auth/solana/check-node`);
+    console.log('[Auth] Request body:', JSON.stringify({address}));
+
+    // Use httpClient (axios) - works in RN 0.83 bridgeless mode
+    const checkRes = await httpClient.post('/auth/solana/check-node', {address});
+    const checkData: CheckNodeResponse = checkRes.data;
     console.log('[Auth] ✓ Received response from check-node');
 
-    const nodeExists = checkResponse.data.exists;
-    const nodeName = checkResponse.data.name;
+    const nodeExists = checkData.exists;
+    const nodeName = checkData.name;
     console.log('[Auth] Node exists:', nodeExists, 'name:', nodeName);
 
     return {
@@ -115,19 +117,22 @@ export const checkUserExists = async (): Promise<AuthResult> => {
 };
 
 /**
- * Step 2a: Login existing user (SINGLE WALLET SESSION)
- * Wallet opens ONCE - authorize, get challenge, sign, verify all in one transact() call
- * This matches the Flashback pattern for optimal UX
+ * Step 2a: Login existing user (TWO-PHASE APPROACH)
+ * Phase 1: Wallet transact() - authorize, get challenge, sign
+ * Phase 2: Verify signature OUTSIDE transact to avoid RN 0.82 networking freeze bug
+ *
+ * NOTE: RN 0.82 has a bug where fetch/networking freezes inside transact() callback
+ * after wallet activity launches. Must verify signature AFTER transact() completes.
  */
 export const loginExistingUser = async (
   walletAddress: string,
   authToken: string,
 ): Promise<AuthResult> => {
   try {
-    console.log('[Auth] Step 2a: Logging in existing user with single wallet session...');
+    console.log('[Auth] Step 2a: Logging in existing user...');
 
-    // Everything happens in ONE transact() call
-    const result = await transact(async (wallet: any) => {
+    // PHASE 1: Wallet interaction - get challenge and signature
+    const walletResult = await transact(async (wallet: any) => {
       // Step 1: Reauthorize with stored auth token
       console.log('[Auth] Reauthorizing wallet...');
       const authResult = await wallet.reauthorize({
@@ -211,48 +216,46 @@ export const loginExistingUser = async (
 
       console.log('[Auth] Challenge signed');
 
-      // Step 4: Verify and login (using native fetch - axios fails when backgrounded)
-      console.log('[Auth] Verifying signature...');
-      const verifyRes = await fetch(`${API_BASE_URL}/auth/solana/verify-node`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({address, message: challengeMessage, signature: signatureBase58}),
-      });
-
-      if (!verifyRes.ok) {
-        const errorText = await verifyRes.text().catch(() => '');
-        throw new Error(errorText || `Failed to verify signature (${verifyRes.status})`);
-      }
-
-      const verifyData: VerifyNodeResponse = await verifyRes.json();
-      const {node_id, name, accessToken, refreshToken} = verifyData;
-
-      // Store tokens
-      await storeAuthTokens(accessToken, refreshToken, address);
-      console.log('[Auth] Tokens stored');
-
+      // Return data for verification (will verify OUTSIDE transact)
       return {
         address,
-        node_id,
-        name,
-        accessToken,
-        refreshToken,
+        challengeMessage,
+        signatureBase58,
       };
     });
 
-    // Derive peer ID
-    const peerId = derivePeerId(result.address);
+    console.log('[Auth] Wallet phase complete');
 
-    console.log('[Auth] ✅ Login complete - displayName:', result.name, 'peerId:', peerId);
+    // PHASE 2: Verify signature OUTSIDE transact() to avoid RN 0.82 networking freeze
+    console.log('[Auth] Verifying signature...');
+    console.log('[Auth] Verify URL:', `${API_BASE_URL}/auth/solana/verify-node`);
+
+    // Use httpClient (axios) for RN 0.83 bridgeless mode
+    const verifyRes = await httpClient.post('/auth/solana/verify-node', {
+      address: walletResult.address,
+      message: walletResult.challengeMessage,
+      signature: walletResult.signatureBase58,
+    });
+    const verifyData: VerifyNodeResponse = verifyRes.data;
+    const {node_id, name, accessToken, refreshToken} = verifyData;
+
+    // Store tokens
+    await storeAuthTokens(accessToken, refreshToken, walletResult.address);
+    console.log('[Auth] Tokens stored');
+
+    // Derive peer ID
+    const peerId = derivePeerId(walletResult.address);
+
+    console.log('[Auth] ✅ Login complete - displayName:', name, 'peerId:', peerId);
 
     return {
       success: true,
-      nodeId: result.node_id,
-      walletAddress: result.address,
+      nodeId: node_id,
+      walletAddress: walletResult.address,
       peerId,
-      displayName: result.name,
-      accessToken: result.accessToken,
-      refreshToken: result.refreshToken,
+      displayName: name,
+      accessToken,
+      refreshToken,
     };
   } catch (error: any) {
     console.error('[Auth] Step 2a failed:', error);
@@ -273,9 +276,12 @@ export const loginExistingUser = async (
 };
 
 /**
- * Step 2b: Create new user account (SINGLE WALLET SESSION)
- * Wallet opens ONCE - authorize, get challenge, sign, create all in one transact() call
- * This matches the Flashback pattern for optimal UX
+ * Step 2b: Register new user (TWO-PHASE APPROACH)
+ * Phase 1: Wallet transact() - authorize, get challenge, sign
+ * Phase 2: Create node OUTSIDE transact to avoid RN 0.82 networking freeze bug
+ *
+ * NOTE: RN 0.82 has a bug where fetch/networking freezes inside transact() callback
+ * after wallet activity launches. Must create node AFTER transact() completes.
  */
 export const createNewUser = async (
   walletAddress: string,
@@ -283,10 +289,10 @@ export const createNewUser = async (
   displayName: string,
 ): Promise<AuthResult> => {
   try {
-    console.log('[Auth] Step 2b: Creating new user with single wallet session...');
+    console.log('[Auth] Step 2b: Creating new user...');
 
-    // Everything happens in ONE transact() call
-    const result = await transact(async (wallet: any) => {
+    // PHASE 1: Wallet interaction - get challenge and signature
+    const walletResult = await transact(async (wallet: any) => {
       // Step 1: Reauthorize with stored auth token
       console.log('[Auth] Reauthorizing wallet...');
       const authResult = await wallet.reauthorize({
@@ -314,20 +320,13 @@ export const createNewUser = async (
 
       console.log('[Auth] Wallet reauthorized:', address);
 
-      // Step 2: Get challenge from backend (using native fetch - axios fails when backgrounded)
+      // Step 2: Get challenge from backend (use httpClient/axios for RN 0.83 bridgeless mode)
       console.log('[Auth] Requesting challenge...');
-      const challengeRes = await fetch(`${API_BASE_URL}/auth/solana/challenge-node`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({address, platform: 'mobile'}),
+      const challengeRes = await httpClient.post('/auth/solana/challenge-node', {
+        address,
+        platform: 'mobile',
       });
-
-      if (!challengeRes.ok) {
-        const errorText = await challengeRes.text().catch(() => '');
-        throw new Error(errorText || `Failed to get challenge (${challengeRes.status})`);
-      }
-
-      const challengeData: ChallengeResponse = await challengeRes.json();
+      const challengeData: ChallengeResponse = challengeRes.data;
       const challengeMessage = challengeData.message;
       console.log('[Auth] Challenge received');
 
@@ -361,54 +360,46 @@ export const createNewUser = async (
 
       console.log('[Auth] Challenge signed');
 
-      // Step 4: Create node (using native fetch - axios fails when backgrounded)
-      console.log('[Auth] Creating node with name:', displayName);
-      const nodeId = uuidv4();
-      const createRes = await fetch(`${API_BASE_URL}/auth/solana/create-node`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          id: nodeId,
-          name: displayName,
-          address,
-          message: challengeMessage,
-          signature: signatureBase58,
-        }),
-      });
-
-      if (!createRes.ok) {
-        const errorText = await createRes.text().catch(() => '');
-        throw new Error(errorText || `Failed to create node (${createRes.status})`);
-      }
-
-      const createData: CreateNodeResponse = await createRes.json();
-      const {node_id, accessToken, refreshToken} = createData;
-
-      // Store tokens
-      await storeAuthTokens(accessToken, refreshToken, address);
-      console.log('[Auth] Tokens stored');
-
+      // Return data for node creation (will create OUTSIDE transact)
       return {
         address,
-        node_id,
-        accessToken,
-        refreshToken,
+        challengeMessage,
+        signatureBase58,
       };
     });
 
+    console.log('[Auth] Wallet phase complete');
+
+    // PHASE 2: Create node OUTSIDE transact() to avoid RN 0.82 networking freeze
+    console.log('[Auth] Creating node with name:', displayName);
+    const nodeId = uuidv4();
+    const createRes = await httpClient.post('/auth/solana/create-node', {
+      id: nodeId,
+      name: displayName,
+      address: walletResult.address,
+      message: walletResult.challengeMessage,
+      signature: walletResult.signatureBase58,
+    });
+    const createData: CreateNodeResponse = createRes.data;
+    const {node_id, accessToken, refreshToken} = createData;
+
+    // Store tokens
+    await storeAuthTokens(accessToken, refreshToken, walletResult.address);
+    console.log('[Auth] Tokens stored');
+
     // Derive peer ID
-    const peerId = derivePeerId(result.address);
+    const peerId = derivePeerId(walletResult.address);
 
     console.log('[Auth] ✅ Account created - displayName:', displayName, 'peerId:', peerId);
 
     return {
       success: true,
-      nodeId: result.node_id,
-      walletAddress: result.address,
+      nodeId: node_id,
+      walletAddress: walletResult.address,
       peerId,
       displayName,
-      accessToken: result.accessToken,
-      refreshToken: result.refreshToken,
+      accessToken,
+      refreshToken,
     };
   } catch (error: any) {
     console.error('[Auth] Step 2b failed:', error);
@@ -454,15 +445,12 @@ export const authenticate = async (
 
     // Step 3: Get challenge from backend
     console.log('[Auth] Requesting challenge from backend...');
-    const challengeResponse = await httpClient.post<ChallengeResponse>(
-      '/auth/solana/challenge-node',
-      {
-        address,
-        platform: 'mobile',
-      },
-    );
-
-    const challengeMessage = challengeResponse.data.message;
+    const challengeRes = await httpClient.post('/auth/solana/challenge-node', {
+      address,
+      platform: 'mobile',
+    });
+    const challengeData: ChallengeResponse = challengeRes.data;
+    const challengeMessage = challengeData.message;
     console.log('[Auth] Challenge received');
 
     // Step 4: Sign challenge using reauthorize (faster - goes directly to signature screen)
@@ -614,17 +602,14 @@ export const authenticateWithWallet = async (
       const existingName = checkResponse.data.name;
       console.log('[Auth] Node exists:', nodeExists, 'name:', existingName);
 
-      // Step 3: Get challenge (network call INSIDE transact)
+      // Step 3: Get challenge (network call INSIDE transact - use httpClient/axios for RN 0.83)
       console.log('[Auth] Requesting challenge...');
-      const challengeResponse = await httpClient.post<ChallengeResponse>(
-        '/auth/solana/challenge-node',
-        {
-          address,
-          platform: 'mobile',
-        },
-      );
-
-      const challengeMessage = challengeResponse.data.message;
+      const challengeRes = await httpClient.post('/auth/solana/challenge-node', {
+        address,
+        platform: 'mobile',
+      });
+      const challengeData: ChallengeResponse = challengeRes.data;
+      const challengeMessage = challengeData.message;
       console.log('[Auth] Challenge received');
 
       // Step 4: Sign message in same wallet session

@@ -9,9 +9,9 @@ const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
 const config = {
   resolver: {
     extraNodeModules: {
-      crypto: require.resolve('react-native-get-random-values'),
+      crypto: require.resolve('react-native-quick-crypto'),
       stream: require.resolve('stream-browserify'),
-      buffer: require.resolve('buffer'),
+      buffer: require.resolve('@craftzdog/react-native-buffer'),
       events: require.resolve('events'),
       util: require.resolve('util'),
     },

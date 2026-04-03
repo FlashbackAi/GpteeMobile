@@ -4,56 +4,28 @@ import android.app.Application
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
-import com.facebook.react.ReactNativeHost
-import com.facebook.react.ReactPackage
-import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.load
+import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
-import com.facebook.react.defaults.DefaultReactNativeHost
-import com.facebook.soloader.SoLoader
 
 class MainApplication : Application(), ReactApplication {
 
-  override val reactNativeHost: ReactNativeHost =
-      object : DefaultReactNativeHost(this) {
-        override fun getPackages(): List<ReactPackage> {
-          // Packages are automatically added via autolinking
-          val packages = PackageList(this).packages.toMutableList()
-
-          // Add custom provider service package
-          packages.add(ProviderServicePackage())
-
-          // Add image decoder package
-          packages.add(ImageDecoderPackage())
-
-          // Add thermal manager package
-          packages.add(ThermalManagerPackage())
-
-          // Add battery optimization package
-          packages.add(BatteryOptimizationPackage())
-
-          // Add foreground service package
-          packages.add(ForegroundServicePackage())
-
-          return packages
-        }
-
-        override fun getJSMainModuleName(): String = "index"
-
-        override fun getUseDeveloperSupport(): Boolean = BuildConfig.DEBUG
-
-        override val isNewArchEnabled: Boolean = BuildConfig.IS_NEW_ARCHITECTURE_ENABLED
-        override val isHermesEnabled: Boolean = BuildConfig.IS_HERMES_ENABLED
-      }
-
-  override val reactHost: ReactHost
-    get() = getDefaultReactHost(applicationContext, reactNativeHost)
+  override val reactHost: ReactHost by lazy {
+    getDefaultReactHost(
+      context = applicationContext,
+      packageList =
+        PackageList(this).packages.apply {
+          // Add custom packages
+          add(ProviderServicePackage())
+          add(ImageDecoderPackage())
+          add(ThermalManagerPackage())
+          add(BatteryOptimizationPackage())
+          add(ForegroundServicePackage())
+        },
+    )
+  }
 
   override fun onCreate() {
     super.onCreate()
-    SoLoader.init(this, false)
-    if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
-      // If you opted-in for the New Architecture, we load the native entry point for this app.
-      load()
-    }
+    loadReactNative(this)
   }
 }

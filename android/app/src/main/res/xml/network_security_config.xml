@@ -3,6 +3,14 @@
   <base-config cleartextTrafficPermitted="true">
     <trust-anchors>
       <certificates src="system"/>
+      <certificates src="user"/>
     </trust-anchors>
   </base-config>
+  <!-- Allow connections to API server -->
+  <domain-config cleartextTrafficPermitted="false">
+    <domain includeSubdomains="true">api.gptee.ai</domain>
+    <trust-anchors>
+      <certificates src="system"/>
+    </trust-anchors>
+  </domain-config>
 </network-security-config>
