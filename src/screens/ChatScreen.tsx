@@ -517,6 +517,13 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
         if (selectedProvider && currentRequestId) {
           relayClient.sendCancelRequest(selectedProvider.peerId, currentRequestId);
           addLog('🛑 Cancel request sent to provider');
+
+          // Clear thinking interval and animation for this request
+          const cleanup = remoteThinkingCleanupRef.current.get(currentRequestId);
+          if (cleanup) {
+            cleanup();
+            remoteThinkingCleanupRef.current.delete(currentRequestId);
+          }
         }
       }
 

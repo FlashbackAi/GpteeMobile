@@ -118,8 +118,8 @@ class BackgroundModeManager {
       await webrtcBackgroundService.startProviderMode(
         this.state.peerId,
         this.state.displayName,
-        'Provider Mode Active',
-        `${this.state.displayName} • Ready for P2P inference`
+        'GPTee Provider Mode',
+        'Connected to relay • Accepting inference requests'
       );
 
       // 2. Update relay registration to accept inference jobs
@@ -190,8 +190,8 @@ class BackgroundModeManager {
       await webrtcBackgroundService.startProviderMode(
         this.state.peerId,
         this.state.displayName,
-        'Worker Mode Active',
-        `${this.state.displayName} • Processing vision tasks`
+        'GPTee Worker Mode',
+        'Connected to coordinator • Waiting for vision tasks'
       );
 
       // 2. Start vision worker service

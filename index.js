@@ -63,24 +63,12 @@ AppRegistry.registerHeadlessTask('SolanaMobileWalletAdapterSessionBackgroundTask
   };
 });
 
-// Register GPTee Provider/Worker mode headless task
-AppRegistry.registerHeadlessTask('GPTeeBackgroundTask', () => {
-  return async (taskData) => {
-    console.log('[HeadlessTask] GPTee background task started:', taskData);
-
-    // Keep JavaScript runtime alive for WebRTC/WebSocket connections
-    // The actual relay connection and inference handling runs in the main JS context
-    // This task just ensures the JS bundle stays loaded
-
-    return new Promise((resolve) => {
-      // Run indefinitely until service is stopped
-      // The foreground service will keep this alive
-    });
-  };
-});
-
 // Import Mobile Wallet Adapter after registering headless task
 import '@solana-mobile/mobile-wallet-adapter-protocol';
+
+// NOTE: We do NOT need a GPTee headless task
+// The foreground service keeps the React Native process alive
+// WebSocket and WebRTC connections persist automatically while the process is running
 
 // Suppress known headless task errors that don't affect functionality
 // These errors occur during hot reload but don't prevent the app from working

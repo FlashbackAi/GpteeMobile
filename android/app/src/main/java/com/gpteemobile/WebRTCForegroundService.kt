@@ -13,9 +13,6 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.facebook.react.HeadlessJsTaskService
-import com.facebook.react.bridge.Arguments
-import com.facebook.react.jstasks.HeadlessJsTaskConfig
 
 /**
  * WebRTCForegroundService
@@ -101,34 +98,15 @@ class WebRTCForegroundService : Service() {
                 Log.d(TAG, "Starting foreground service: $currentTitle")
 
                 // Start foreground with notification
+                // This keeps the Android process alive, which keeps React Native runtime loaded
+                // WebSocket and WebRTC connections persist automatically
                 startForeground(NOTIFICATION_ID, createNotification(currentTitle, currentMessage))
 
-                // Start headless JS task to keep JavaScript runtime alive
-                try {
-                    val context = applicationContext
-                    val taskIntent = Intent(context, GPTeeHeadlessTaskService::class.java)
-                    val extras = Bundle()
-                    extras.putString("title", currentTitle)
-                    extras.putString("message", currentMessage)
-                    taskIntent.putExtras(extras)
-                    context.startService(taskIntent)
-                    Log.d(TAG, "Headless task service started")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to start headless task: ${e.message}")
-                }
+                Log.d(TAG, "✅ Foreground service active - process will persist in background")
             }
 
             ACTION_STOP_SERVICE -> {
                 Log.d(TAG, "Stopping service")
-
-                // Stop headless task
-                try {
-                    val context = applicationContext
-                    val taskIntent = Intent(context, GPTeeHeadlessTaskService::class.java)
-                    context.stopService(taskIntent)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to stop headless task: ${e.message}")
-                }
 
                 stopForeground(true)
                 stopSelf()
@@ -159,12 +137,12 @@ class WebRTCForegroundService : Service() {
 
     /**
      * Called when app is removed from recent apps
-     * Restart service to keep it alive
+     * Restart service to keep it alive (like WhatsApp, Telegram, etc.)
      */
     override fun onTaskRemoved(rootIntent: Intent?) {
-        Log.d(TAG, "⚠️ App removed from recent apps - restarting service")
+        Log.d(TAG, "⚠️ App removed from recent apps - scheduling restart")
 
-        // Schedule restart
+        // Schedule restart using exact alarm (required for Android 12+)
         val restartIntent = Intent(applicationContext, WebRTCForegroundService::class.java).apply {
             action = ACTION_START_SERVICE
             putExtra(EXTRA_TITLE, currentTitle)
@@ -179,11 +157,27 @@ class WebRTCForegroundService : Service() {
         )
 
         val alarmManager = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
-        alarmManager.set(
-            android.app.AlarmManager.RTC_WAKEUP,
-            System.currentTimeMillis() + 1000,
-            pendingIntent
-        )
+        val triggerTime = System.currentTimeMillis() + 1000
+
+        try {
+            // Use setExactAndAllowWhileIdle for better reliability (works even in Doze mode)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    android.app.AlarmManager.RTC_WAKEUP,
+                    triggerTime,
+                    pendingIntent
+                )
+            } else {
+                alarmManager.setExact(
+                    android.app.AlarmManager.RTC_WAKEUP,
+                    triggerTime,
+                    pendingIntent
+                )
+            }
+            Log.d(TAG, "✅ Service restart scheduled for ${triggerTime}")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to schedule restart: ${e.message}")
+        }
 
         super.onTaskRemoved(rootIntent)
     }
@@ -209,6 +203,7 @@ class WebRTCForegroundService : Service() {
 
     /**
      * Create notification for foreground service
+     * Designed to be informative like Google Maps notifications
      */
     private fun createNotification(title: String, message: String): Notification {
         // Intent to open app when notification is tapped
@@ -220,54 +215,19 @@ class WebRTCForegroundService : Service() {
             PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Stop action
-        val stopIntent = Intent(this, WebRTCForegroundService::class.java).apply {
-            action = ACTION_STOP_SERVICE
-        }
-        val stopPendingIntent = PendingIntent.getService(
-            this,
-            0,
-            stopIntent,
-            PendingIntent.FLAG_IMMUTABLE
-        )
-
-        // Calculate uptime
-        val startTime = System.currentTimeMillis()
-        val uptimeText = "Active since ${formatTime(startTime)}"
-
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(message)
-            .setSubText(uptimeText)
-            .setSmallIcon(android.R.drawable.ic_dialog_info) // TODO: Use app icon
+            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth) // Use Bluetooth icon to indicate P2P
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setShowWhen(true)
-            .setUsesChronometer(true)
-            .setWhen(startTime)
-            .setStyle(NotificationCompat.BigTextStyle()
-                .bigText(message)
-                .setBigContentTitle(title))
-            .addAction(
-                android.R.drawable.ic_delete,
-                "Stop",
-                stopPendingIntent
-            )
-            .setColor(0xFF8B7355.toInt()) // Cream/beige theme color
+            .setShowWhen(false) // Don't show timestamp
+            .setColor(0xFF4CAF50.toInt()) // Green for active/connected state
+            .setColorized(true) // Make notification colorful like Google Maps
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .build()
-    }
-
-    /**
-     * Format timestamp to HH:MM
-     */
-    private fun formatTime(timestamp: Long): String {
-        val calendar = java.util.Calendar.getInstance()
-        calendar.timeInMillis = timestamp
-        val hour = calendar.get(java.util.Calendar.HOUR_OF_DAY)
-        val minute = calendar.get(java.util.Calendar.MINUTE)
-        return String.format("%02d:%02d", hour, minute)
     }
 
     /**
