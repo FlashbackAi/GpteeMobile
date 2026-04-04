@@ -63,6 +63,22 @@ AppRegistry.registerHeadlessTask('SolanaMobileWalletAdapterSessionBackgroundTask
   };
 });
 
+// Register GPTee Provider/Worker mode headless task
+AppRegistry.registerHeadlessTask('GPTeeBackgroundTask', () => {
+  return async (taskData) => {
+    console.log('[HeadlessTask] GPTee background task started:', taskData);
+
+    // Keep JavaScript runtime alive for WebRTC/WebSocket connections
+    // The actual relay connection and inference handling runs in the main JS context
+    // This task just ensures the JS bundle stays loaded
+
+    return new Promise((resolve) => {
+      // Run indefinitely until service is stopped
+      // The foreground service will keep this alive
+    });
+  };
+});
+
 // Import Mobile Wallet Adapter after registering headless task
 import '@solana-mobile/mobile-wallet-adapter-protocol';
 
@@ -83,7 +99,11 @@ console.error = (...args) => {
     errorString.includes('Could not enqueue microtask because they are disabled') ||
     // Background actions headless task registration warning
     errorString.includes('registerHeadlessTask') ||
-    errorString.includes('registerCancellableHeadlessTask')
+    errorString.includes('registerCancellableHeadlessTask') ||
+    // GPTee headless task warnings during hot reload
+    errorString.includes('GPTeeInferenceTask') ||
+    errorString.includes('GPTeeCancellationTask') ||
+    errorString.includes('GPTeeWorkerTask')
   ) {
     // Suppress these specific errors - they're hot reload artifacts
     return;

@@ -25,8 +25,8 @@ import { VisionWorkerService } from '../services/VisionWorkerService';
 import { VisionModelDownloader } from '../services/VisionModelDownloader';
 import { FaceRecognitionService } from '../services/FaceRecognitionService';
 import { llamaEngine } from '../inference/LlamaEngine';
-import { COORDINATOR_URL } from '../config';
-import { startForegroundService, stopForegroundService, isServiceRunning } from '../services/ForegroundService';
+import { COORDINATOR_URL, RELAY_SERVER_URL } from '../config';
+import { backgroundModeManager } from '../services/BackgroundModeManager';
 import { isBatteryOptimizationDisabled, openBatteryOptimizationSettings } from '../services/BatteryOptimization';
 import { BatteryOptimizationGuide } from '../components/BatteryOptimizationGuide';
 import { checkNotificationPermission, requestNotificationPermission } from '../services/NotificationPermission';
@@ -124,6 +124,44 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
 
     return () => clearInterval(interval);
   }, [getGreeting]);
+
+  // Synchronize state with native background service
+  // This ensures UI updates when mode is changed from ProfileScreen or ChatScreen
+  useEffect(() => {
+    console.log('[HomeScreen] Setting up background mode manager state listener');
+
+    const unsubscribe = backgroundModeManager.onStateChange((state) => {
+      console.log('[HomeScreen] State changed:', state);
+
+      // Update provider mode if changed
+      const isProviderMode = state.mode === 'provider';
+      if (isProviderMode !== providerModeEnabled) {
+        setProviderModeEnabled(isProviderMode);
+        addLog(
+          isProviderMode
+            ? '✅ Provider mode enabled'
+            : '⚠️ Provider mode disabled'
+        );
+      }
+
+      // Update worker mode if changed
+      const isWorkerMode = state.mode === 'worker';
+      if (isWorkerMode !== imageWorkerEnabled) {
+        setImageWorkerEnabled(isWorkerMode);
+        addLog(
+          isWorkerMode
+            ? '✅ Worker mode enabled'
+            : '⚠️ Worker mode disabled'
+        );
+      }
+    });
+
+    // Cleanup on unmount
+    return () => {
+      console.log('[HomeScreen] Cleaning up background mode manager listener');
+      unsubscribe();
+    };
+  }, [providerModeEnabled, imageWorkerEnabled, setProviderModeEnabled, setImageWorkerEnabled, addLog]);
 
   // Handle provider mode toggle with battery check
   const handleProviderToggle = async (value: boolean) => {
@@ -231,16 +269,32 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
             }
           }
 
-        // Enable provider mode
-        await setProviderModeEnabled(true);
-
-        // Start foreground service
+        // Start provider mode
         try {
-          await startForegroundService();
-          addLog('✅ Background service started');
+          console.log('[HomeScreen] Starting provider mode');
+          addLog('🚀 Starting provider mode...');
+
+          await backgroundModeManager.enableProvider();
+
+          // State will be updated via listener
+          addLog('✅ Provider mode started - P2P WebRTC ready');
+
+          Toast.show({
+            type: 'success',
+            text1: 'provider mode active',
+            text2: 'running in background via P2P',
+            position: 'top',
+          });
         } catch (error: any) {
-          console.error('Failed to start foreground service:', error);
-          addLog(`⚠️ Background service failed: ${error.message}`);
+          console.error('[HomeScreen] Failed to start provider mode:', error);
+          addLog(`❌ Failed to start provider mode: ${error.message}`);
+
+          Toast.show({
+            type: 'error',
+            text1: 'failed to start',
+            text2: error.message,
+            position: 'top',
+          });
         }
       };
 
@@ -256,33 +310,42 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
         await enableProviderMode();
       }
     } else {
-      // Disabling provider mode - also disable local mode and unload the model
-      if (llamaEngine.isLoaded()) {
-        addLog('⏳ Unloading LLM model...');
-        await llamaEngine.unload();
-        setModelLoaded(false);
-        addLog('✅ LLM model unloaded');
-      }
+      // Disabling provider mode
+      console.log('[HomeScreen] Disabling provider mode');
+      addLog('🛑 Stopping provider mode...');
 
-      // Disable local mode if it was enabled
-      if (localInferenceMode) {
-        await setLocalInferenceMode(false);
-        addLog('ℹ️ Local mode disabled - re-enable from chat if needed');
-      }
+      try {
+        // Stop provider mode
+        await backgroundModeManager.disable();
 
-      // Stop foreground service if no modes are active
-      if (!imageWorkerEnabled && isServiceRunning()) {
-        try {
-          await stopForegroundService();
-          addLog('✅ Background service stopped');
-        } catch (error: any) {
-          console.error('Failed to stop foreground service:', error);
+        // Unload model if loaded
+        if (llamaEngine.isLoaded()) {
+          addLog('⏳ Unloading LLM model...');
+          await llamaEngine.unload();
+          setModelLoaded(false);
+          addLog('✅ LLM model unloaded');
         }
-      }
 
-        // Disable provider mode
-        await setProviderModeEnabled(false);
+        // Disable local mode if it was enabled
+        if (localInferenceMode) {
+          await setLocalInferenceMode(false);
+          addLog('ℹ️ Local mode disabled - re-enable from chat if needed');
+        }
+
+        // State will be updated via listener
+        addLog('✅ Provider mode stopped');
+
+        Toast.show({
+          type: 'info',
+          text1: 'provider mode disabled',
+          text2: 'background service stopped',
+          position: 'top',
+        });
+      } catch (error: any) {
+        console.error('[HomeScreen] Failed to stop provider mode:', error);
+        addLog(`❌ Failed to stop provider mode: ${error.message}`);
       }
+    }
     } finally {
       setProviderToggleLoading(false);
     }
@@ -374,20 +437,37 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
           }
         }
 
-        await setImageWorkerEnabled(true);
-
-        // Start foreground service
+        // Start worker mode
         try {
-          await startForegroundService();
-          addLog('✅ Background service started');
-        } catch (error: any) {
-          console.error('Failed to start foreground service:', error);
-          addLog(`⚠️ Background service failed: ${error.message}`);
-        }
+          console.log('[HomeScreen] Starting worker mode');
+          addLog('🚀 Starting worker mode...');
 
-        // Navigate to ImageWorkerScreen to complete setup
-        if (onOpenImageWorker) {
-          onOpenImageWorker();
+          await backgroundModeManager.enableWorker();
+
+          // State will be updated via listener
+          addLog('✅ Worker mode started - connected to coordinator');
+
+          Toast.show({
+            type: 'success',
+            text1: 'worker mode active',
+            text2: 'running in background',
+            position: 'top',
+          });
+
+          // Navigate to ImageWorkerScreen to complete setup
+          if (onOpenImageWorker) {
+            onOpenImageWorker();
+          }
+        } catch (error: any) {
+          console.error('[HomeScreen] Failed to start worker mode:', error);
+          addLog(`❌ Failed to start worker mode: ${error.message}`);
+
+          Toast.show({
+            type: 'error',
+            text1: 'failed to start',
+            text2: error.message,
+            position: 'top',
+          });
         }
       };
 
@@ -399,20 +479,42 @@ export default function HomeScreen({ onSelectRole, onOpenProfile, onOpenFaceTest
         await enableWorkerMode();
       }
     } else {
-      await setImageWorkerEnabled(false);
-      const workerService = VisionWorkerService.getInstance();
-      await workerService.stopWorkerMode();
+      // Disabling worker mode
+      console.log('[HomeScreen] Disabling worker mode');
+      addLog('🛑 Stopping worker mode...');
 
-      // Stop foreground service if no modes are active
-      if (!providerModeEnabled && isServiceRunning()) {
+      try {
+        // Stop worker mode
+        await backgroundModeManager.disable();
+
+        // Stop the worker service
+        const workerService = VisionWorkerService.getInstance();
+        await workerService.stopWorkerMode();
+
+        // Release vision models if loaded
         try {
-          await stopForegroundService();
-          addLog('✅ Background service stopped');
-        } catch (error: any) {
-            console.error('Failed to stop foreground service:', error);
+          const faceService = FaceRecognitionService.getInstance();
+          await faceService.release();
+          setVisionModelsLoaded(false);
+          addLog('✅ Vision models released');
+        } catch (error) {
+          console.warn('[HomeScreen] Error releasing vision models:', error);
         }
+
+        // State will be updated via listener
+        addLog('✅ Worker mode stopped');
+
+        Toast.show({
+          type: 'info',
+          text1: 'worker mode disabled',
+          text2: 'background service stopped',
+          position: 'top',
+        });
+      } catch (error: any) {
+        console.error('[HomeScreen] Failed to stop worker mode:', error);
+        addLog(`❌ Failed to stop worker mode: ${error.message}`);
       }
-      }
+    }
     } finally {
       setWorkerToggleLoading(false);
     }

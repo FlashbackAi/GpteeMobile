@@ -17,21 +17,10 @@ class ForegroundServiceModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun startService(options: ReadableMap, promise: Promise) {
         try {
-            val intent = Intent(reactApplicationContext, ProviderForegroundService::class.java)
-            intent.action = ProviderForegroundService.ACTION_START
+            val title = options.getString("taskTitle") ?: "Provider Mode"
+            val message = options.getString("taskDesc") ?: "Running in background"
 
-            // Pass options to service
-            if (options.hasKey("taskTitle")) {
-                intent.putExtra("taskTitle", options.getString("taskTitle"))
-            }
-            if (options.hasKey("taskDesc")) {
-                intent.putExtra("taskDesc", options.getString("taskDesc"))
-            }
-            if (options.hasKey("mode")) {
-                intent.putExtra("mode", options.getString("mode"))
-            }
-
-            reactApplicationContext.startForegroundService(intent)
+            WebRTCForegroundService.start(reactApplicationContext, title, message)
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("START_SERVICE_ERROR", "Failed to start foreground service: ${e.message}", e)
@@ -41,9 +30,7 @@ class ForegroundServiceModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun stopService(promise: Promise) {
         try {
-            val intent = Intent(reactApplicationContext, ProviderForegroundService::class.java)
-            intent.action = ProviderForegroundService.ACTION_STOP
-            reactApplicationContext.stopService(intent)
+            WebRTCForegroundService.stop(reactApplicationContext)
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("STOP_SERVICE_ERROR", "Failed to stop foreground service: ${e.message}", e)
@@ -53,17 +40,12 @@ class ForegroundServiceModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun updateNotification(options: ReadableMap, promise: Promise) {
         try {
-            val intent = Intent(reactApplicationContext, ProviderForegroundService::class.java)
-            intent.action = ProviderForegroundService.ACTION_UPDATE
+            // Note: WebRTCForegroundService doesn't support updateNotification directly
+            // Would need to stop and restart with new parameters
+            val title = options.getString("taskTitle") ?: "Provider Mode"
+            val message = options.getString("taskDesc") ?: "Running in background"
 
-            if (options.hasKey("taskTitle")) {
-                intent.putExtra("taskTitle", options.getString("taskTitle"))
-            }
-            if (options.hasKey("taskDesc")) {
-                intent.putExtra("taskDesc", options.getString("taskDesc"))
-            }
-
-            reactApplicationContext.startService(intent)
+            WebRTCForegroundService.start(reactApplicationContext, title, message)
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("UPDATE_NOTIFICATION_ERROR", "Failed to update notification: ${e.message}", e)

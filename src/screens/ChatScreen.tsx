@@ -13,7 +13,6 @@ import { relayClient } from '../network/RelayClient';
 import { ChatMessage, ProviderInfo, InferenceRequestMessage } from '../network/PeerProtocol';
 import { llamaEngine } from '../inference/LlamaEngine';
 import { colors, fonts } from '../theme/colors';
-import ProviderService from '../services/ProviderService';
 import { NodeInfoPopup } from '../components/NodeInfoPopup';
 import { LogsPopup } from '../components/LogsPopup';
 import { FloatingDownloadButton } from '../components/FloatingDownloadButton';
@@ -112,7 +111,14 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
     };
 
     relayClient.onStreamDone = (requestId, tokensGenerated, durationMs, providerName) => {
-      const { finaliseMessage } = useAppStore.getState();
+      const { finaliseMessage, currentRequestId } = useAppStore.getState();
+
+      // Don't finalize if this request was cancelled (currentRequestId will be null)
+      if (currentRequestId !== requestId) {
+        console.log(`[ChatScreen] Ignoring streamDone for cancelled request ${requestId}`);
+        return;
+      }
+
       finaliseMessage(requestId, tokensGenerated, durationMs, providerName);
     };
 
@@ -280,14 +286,8 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
   // Registration updates are handled globally in App.tsx
   // No need to send updates here to avoid race conditions
 
-  // Clean up provider service on unmount
-  useEffect(() => {
-    return () => {
-      if (accepting) {
-        ProviderService.stop();
-      }
-    };
-  }, [accepting]);
+  // Provider service cleanup is handled by BackgroundModeManager
+  // No manual cleanup needed here
 
   const toggleLocalMode = async (enabled: boolean) => {
     // Local Mode can only be toggled when Provider Mode is OFF
@@ -463,7 +463,7 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
       // Automatically start accepting if model is loaded
       if (modelLoaded) {
         setAccepting(true);
-        ProviderService.start();
+        // BackgroundModeManager handles relay registration
         addLog('🟢 Now accepting jobs (available as provider)');
       }
     } else {
@@ -472,7 +472,7 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
       const newState = useLocalModel ? 'State 3: Local User' : 'State 2: Consumer';
       addLog(`⚫ Provider mode disabled → ${newState}`);
         setAccepting(false);
-        ProviderService.stop();
+        // BackgroundModeManager handles relay deregistration
         addLog('🔴 Stopped accepting jobs (no longer available)');
       }
     } finally {
@@ -484,13 +484,11 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
   useEffect(() => {
     if (providerModeEnabled && modelLoaded && !accepting) {
       setAccepting(true);
-      ProviderService.start();
-      // Relay registration is handled by App.tsx
+      // BackgroundModeManager handles relay registration
       addLog('🟢 Now accepting jobs (available as provider)');
     } else if (!providerModeEnabled && accepting) {
       setAccepting(false);
-      ProviderService.stop();
-      // Relay registration is handled by App.tsx
+      // BackgroundModeManager handles relay deregistration
       addLog('🔴 Stopped accepting jobs (no longer available)');
     }
   }, [providerModeEnabled, modelLoaded]);

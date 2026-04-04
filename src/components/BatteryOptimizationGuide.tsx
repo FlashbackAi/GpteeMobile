@@ -110,9 +110,9 @@ export const BatteryOptimizationGuide: React.FC<Props> = ({
                 <Text style={styles.stepNumberText}>2</Text>
               </View>
               <View style={styles.stepContent}>
-                <Text style={styles.stepTitle}>find gptee</Text>
+                <Text style={styles.stepTitle}>find gptee in list</Text>
                 <Text style={styles.stepDescription}>
-                  scroll through the list and find "gptee" app
+                  in the battery optimization settings, scroll and tap on "GPTee"
                 </Text>
               </View>
             </Animated.View>
@@ -124,7 +124,7 @@ export const BatteryOptimizationGuide: React.FC<Props> = ({
               <View style={styles.stepContent}>
                 <Text style={styles.stepTitle}>select "don't optimize"</Text>
                 <Text style={styles.stepDescription}>
-                  choose "unrestricted" or "don't optimize" option
+                  tap "don't optimize" or "unrestricted", then press back to return
                 </Text>
               </View>
             </Animated.View>

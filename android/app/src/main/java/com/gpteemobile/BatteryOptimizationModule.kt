@@ -40,13 +40,15 @@ class BatteryOptimizationModule(reactContext: ReactApplicationContext) :
 
     /**
      * Open battery optimization settings for the app
+     * Opens the system battery optimization settings page where user can select the app
      */
     @ReactMethod
     fun openBatteryOptimizationSettings(promise: Promise) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                    data = Uri.parse("package:${reactApplicationContext.packageName}")
+                // Open the battery optimization settings page (list of all apps)
+                // User will need to find GPTee in the list and select "Don't optimize"
+                val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
                 reactApplicationContext.startActivity(intent)
@@ -55,7 +57,7 @@ class BatteryOptimizationModule(reactContext: ReactApplicationContext) :
                 promise.resolve(false)
             }
         } catch (e: Exception) {
-            // Fallback: open app settings
+            // Fallback: Try the app-specific settings page
             try {
                 val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                     data = Uri.parse("package:${reactApplicationContext.packageName}")

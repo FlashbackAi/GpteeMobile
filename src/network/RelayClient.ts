@@ -162,6 +162,13 @@ class RelayClient {
 
   // ── Connect ─────────────────────────────────────────────────────────────────
   async connect(role: PeerRole, deviceInfo: RegisterMessage['deviceInfo']) {
+    // Guard: Don't reconnect if already connected with same role
+    if (this.connected && this.ws?.readyState === WebSocket.OPEN && this.role === role) {
+      console.log(`[RelayClient] Already connected as ${role} - updating registration instead`);
+      this.updateRegistration(deviceInfo);
+      return;
+    }
+
     // Ensure peerId is set from store before connecting
     const { useAppStore } = await import('../store/appStore');
     const storePeerId = useAppStore.getState().peerId;
@@ -388,10 +395,12 @@ class RelayClient {
 
   // ── Handle WebRTC signaling ───────────────────────────────────────────────────
   private async handleWebRTCSignaling(msg: WebRTCOfferMessage | WebRTCAnswerMessage | WebRTCIceCandidateMessage) {
+    console.log(`[RelayClient] 📨 Received WebRTC signaling: ${msg.type} from ${msg.from}`);
+
     if (!this.webrtcClient) {
       // Initialize WebRTC client if we receive an offer (we're the answerer)
       if (msg.type === 'webrtc_offer') {
-        // console.log('[RelayClient] Initializing WebRTC as answerer');
+        console.log('[RelayClient] 🎯 Initializing WebRTC as answerer (PROVIDER receiving offer)');
         this.webrtcInitializing = true;
         this.initializeWebRTC(msg.from);
 
@@ -480,9 +489,10 @@ class RelayClient {
     try {
       await this.webrtcClient!.initiateConnection(providerId, (msg) => {
         // Send signaling messages via relay
+        console.log(`[RelayClient] 📤 CONSUMER sending ${msg.type} to provider ${providerId} via relay`);
         this.sendRaw(msg);
       });
-      // console.log('[RelayClient] WebRTC initiation complete');
+      console.log('[RelayClient] ✅ WebRTC initiation complete (offer sent)');
     } catch (err) {
       console.error('[RelayClient] WebRTC initiation error:', err);
       this.webrtcInitializing = false;
@@ -856,8 +866,12 @@ class RelayClient {
     if (this.webrtcClient?.isConnected()) {
       console.log('[RelayClient] ✅ Sending cancel via WebRTC');
       this.webrtcClient.sendMessage(msg);
+    } else if (this.webrtcInitializing || this.webrtcClient) {
+      // WebRTC is initializing or not fully connected yet - queue the cancel
+      console.log('[RelayClient] ⏳ WebRTC still connecting - queueing cancel message');
+      this.messageQueue.push({ msg, resolve: () => {} });
     } else {
-      const error = `❌ Cannot send cancel request: WebRTC not connected (P2P-only mode)`;
+      const error = `❌ Cannot send cancel request: No WebRTC connection (P2P-only mode)`;
       console.error('[RelayClient]', error);
       throw new Error(error);
     }

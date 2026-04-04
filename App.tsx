@@ -18,6 +18,7 @@ import { ModelDownloadManager, AVAILABLE_MODELS } from './src/services/ModelDown
 import { VisionWorkerService } from './src/services/VisionWorkerService';
 import { FaceRecognitionService } from './src/services/FaceRecognitionService';
 import { requestNotificationPermission } from './src/services/NotificationPermission';
+import { backgroundModeManager } from './src/services/BackgroundModeManager';
 
 // Set default font for all Text and TextInput components
 // TEMP COMMENTED OUT FOR DEBUGGING

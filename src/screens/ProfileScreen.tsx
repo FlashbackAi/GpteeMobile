@@ -30,7 +30,6 @@ import { llamaEngine } from '../inference/LlamaEngine';
 import Toast from 'react-native-toast-message';
 import type { ThermalStatus } from '../services/ThermalMonitorService';
 import { checkNotificationPermission, requestNotificationPermission } from '../services/NotificationPermission';
-import { startForegroundService, stopForegroundService, isServiceRunning } from '../services/ForegroundService';
 
 interface ProfileScreenProps {
   onBack: () => void;

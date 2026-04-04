@@ -15,11 +15,11 @@ class MainApplication : Application(), ReactApplication {
       packageList =
         PackageList(this).packages.apply {
           // Add custom packages
-          add(ProviderServicePackage())
           add(ImageDecoderPackage())
           add(ThermalManagerPackage())
           add(BatteryOptimizationPackage())
           add(ForegroundServicePackage())
+          add(WebRTCBackgroundServicePackage()) // WebRTC foreground service (keeps JS alive for P2P)
         },
     )
   }

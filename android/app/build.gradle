@@ -129,6 +129,12 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // OkHttp for native WebSocket connections
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // LocalBroadcastManager for state synchronization
+    implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
 }
 
 apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")

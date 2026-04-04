@@ -42,10 +42,16 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       </activity>
+      <!-- WebRTC Foreground Service: Keeps process alive for P2P connections -->
       <service
-        android:name=".ProviderForegroundService"
+        android:name=".WebRTCForegroundService"
         android:enabled="true"
         android:exported="false"
         android:foregroundServiceType="dataSync" />
+
+      <!-- Headless Task Service: Keeps JavaScript runtime alive when app is backgrounded/killed -->
+      <service
+        android:name=".GPTeeHeadlessTaskService"
+        android:exported="false" />
     </application>
 </manifest>
