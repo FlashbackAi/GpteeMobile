@@ -19,6 +19,7 @@ import { FloatingDownloadButton } from '../components/FloatingDownloadButton';
 import { Sidebar } from '../components/Sidebar';
 import { CustomToast } from '../components/CustomToast';
 import { checkNotificationPermission, requestNotificationPermission } from '../services/NotificationPermission';
+import { backgroundModeManager } from '../services/BackgroundModeManager';
 
 interface Props {
   onBack: () => void;
@@ -444,37 +445,56 @@ export default function ChatScreen({ onBack, onOpenMenu, onOpenProfile }: Props)
           return;
         }
       }
+
+      // Enable provider mode via BackgroundModeManager (single source of truth)
+      try {
+        await backgroundModeManager.enableProvider();
+        // State will be synced via BackgroundModeManager listener
+        addLog('✅ Provider mode enabled (State 1: Provider - serving others)');
+        setAccepting(true);
+        Toast.show({
+          type: 'success',
+          text1: 'provider mode active',
+          text2: 'running in background via P2P',
+          position: 'top',
+        });
+      } catch (error: any) {
+        addLog(`❌ Failed to enable provider mode: ${error.message}`);
+        Toast.show({
+          type: 'error',
+          text1: 'failed to start',
+          text2: error.message,
+          position: 'top',
+        });
+      }
     } else {
-      // Disabling provider mode - unload the model
-      if (llamaEngine.isLoaded()) {
-        addLog('⏳ Unloading LLM model...');
-        await llamaEngine.unload();
-        setModelLoaded(false);
-        addLog('✅ LLM model unloaded');
+      // Disable provider mode via BackgroundModeManager
+      try {
+        await backgroundModeManager.disable();
+
+        // Unload model if loaded
+        if (llamaEngine.isLoaded()) {
+          addLog('⏳ Unloading LLM model...');
+          await llamaEngine.unload();
+          setModelLoaded(false);
+          addLog('✅ LLM model unloaded');
+        }
+
+        // State will be synced via BackgroundModeManager listener
+        const newState = useLocalModel ? 'State 3: Local User' : 'State 2: Consumer';
+        addLog(`⚫ Provider mode disabled → ${newState}`);
+        setAccepting(false);
+        addLog('🔴 Stopped accepting jobs (no longer available)');
+        Toast.show({
+          type: 'info',
+          text1: 'provider mode disabled',
+          text2: 'background service stopped',
+          position: 'top',
+        });
+      } catch (error: any) {
+        addLog(`❌ Failed to disable provider mode: ${error.message}`);
       }
     }
-
-    await setProviderModeEnabled(enabled);
-    // Relay registration update is handled by App.tsx useEffect
-
-    if (enabled) {
-      // State 1: Provider Mode ON → serves others, uses own compute
-      addLog('🟢 Provider mode enabled (State 1: Provider - serving others)');
-      // Automatically start accepting if model is loaded
-      if (modelLoaded) {
-        setAccepting(true);
-        // BackgroundModeManager handles relay registration
-        addLog('🟢 Now accepting jobs (available as provider)');
-      }
-    } else {
-      // Transitioning out of Provider Mode
-      // Will become State 2 (Consumer) if Local Mode OFF, or State 3 (Local User) if Local Mode ON
-      const newState = useLocalModel ? 'State 3: Local User' : 'State 2: Consumer';
-      addLog(`⚫ Provider mode disabled → ${newState}`);
-        setAccepting(false);
-        // BackgroundModeManager handles relay deregistration
-        addLog('🔴 Stopped accepting jobs (no longer available)');
-      }
     } finally {
       setProviderToggleLoading(false);
     }
